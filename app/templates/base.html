@@ -92,6 +92,10 @@
                         <a class="nav-link {% if active_page == 'materials' %}active{% endif %}" href="{{ url_for('materials') }}">
                             <i class="fas fa-cubes"></i> Materials & Codes
                         </a>
+                        <a class="nav-link {% if active_page == 'scales' %}active{% endif %}" href="{{ url_for('scales_dashboard') }}">
+                            <i class="fas fa-balance-scale"></i> Scales
+                        </a>
+                        <hr class="bg-light">
                         <a class="nav-link" href="{{ url_for('logout') }}">
                             <i class="fas fa-sign-out-alt"></i> Logout
                         </a>
