@@ -38,8 +38,8 @@
                         <select name="material_id" id="material_id" class="form-select" required>
                             <option value="">Select material...</option>
                             {% for material in materials %}
-                            <option value="{{ material.id }}" data-price="{{ material.price_per_kg }}">
-                                {{ material.name }} - R{{ material.price_per_kg }}/kg
+                            <option value="{{ material.id }}" data-price="{{ material.price_per_kg }}" data-code="{{ material.code }}">
+                                [{{ material.code }}] {{ material.name }} - R{{ material.price_per_kg }}/kg
                             </option>
                             {% endfor %}
                         </select>
@@ -61,6 +61,7 @@
                             <i class="fas fa-calculator"></i> Calculated Amount
                         </label>
                         <input type="text" id="calculated_amount" class="form-control" readonly style="font-size: 1.2rem; font-weight: bold; background-color: #e8f5e9;">
+                        <small class="text-muted" id="selected_code"></small>
                     </div>
                 </div>
                 
@@ -78,26 +79,27 @@
 
 {% block scripts %}
 <script>
-    // Get DOM elements
     const materialSelect = document.getElementById('material_id');
     const weightInput = document.getElementById('weight');
     const amountDisplay = document.getElementById('calculated_amount');
     const readScaleBtn = document.getElementById('readScaleBtn');
+    const codeDisplay = document.getElementById('selected_code');
     
-    // Function to calculate and display amount
     function calculateAmount() {
-        // Get selected material price from data-price attribute
         const selectedOption = materialSelect.options[materialSelect.selectedIndex];
         const price = selectedOption ? parseFloat(selectedOption.getAttribute('data-price')) : 0;
-        
-        // Get weight value
+        const code = selectedOption ? selectedOption.getAttribute('data-code') : '';
         const weight = parseFloat(weightInput.value) || 0;
         
-        // Calculate amount
+        if (code) {
+            codeDisplay.textContent = 'Material Code: ' + code;
+        } else {
+            codeDisplay.textContent = '';
+        }
+        
         if (price > 0 && weight > 0) {
             const amount = price * weight;
             amountDisplay.value = 'R ' + amount.toFixed(2);
-            // Add a visual indicator
             amountDisplay.style.backgroundColor = '#c8e6c9';
         } else {
             amountDisplay.value = '';
@@ -105,16 +107,9 @@
         }
     }
     
-    // Add event listeners
-    if (materialSelect) {
-        materialSelect.addEventListener('change', calculateAmount);
-    }
+    materialSelect.addEventListener('change', calculateAmount);
+    weightInput.addEventListener('input', calculateAmount);
     
-    if (weightInput) {
-        weightInput.addEventListener('input', calculateAmount);
-    }
-    
-    // Read from scale function
     if (readScaleBtn) {
         readScaleBtn.addEventListener('click', function(e) {
             e.preventDefault();
@@ -150,7 +145,6 @@
         });
     }
     
-    // Also calculate on page load if values exist
     if (weightInput.value && materialSelect.value) {
         calculateAmount();
     }

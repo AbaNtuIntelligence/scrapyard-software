@@ -37,12 +37,15 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Create tables
+    # Create tables with material codes
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
             name TEXT UNIQUE NOT NULL,
-            price_per_kg REAL NOT NULL
+            price_per_kg REAL NOT NULL,
+            description TEXT,
+            is_active BOOLEAN DEFAULT 1
         )
     ''')
     
@@ -62,6 +65,7 @@ def init_db():
             ticket_number TEXT UNIQUE NOT NULL,
             seller_id INTEGER NOT NULL,
             material_id INTEGER NOT NULL,
+            material_code TEXT NOT NULL,
             weight_kg REAL NOT NULL,
             amount REAL NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -70,18 +74,24 @@ def init_db():
         )
     ''')
     
-    # Insert sample materials if none exist
+    # Insert sample materials with codes if none exist
     cursor.execute('SELECT COUNT(*) FROM materials')
     if cursor.fetchone()[0] == 0:
         materials = [
-            ('Cardboard', 1.50),
-            ('Mixed Paper', 0.80),
-            ('Aluminium Cans', 12.00),
-            ('Steel/Tin Cans', 2.20),
-            ('Plastic (PET)', 4.50),
-            ('Glass', 0.60)
+            ('K4', 'Cardboard', 1.50, 'Corrugated cardboard boxes and sheets'),
+            ('K5', 'Mixed Paper', 0.80, 'Newspapers, magazines, office paper'),
+            ('AL1', 'Aluminium Cans', 25.00, 'Clean aluminium beverage cans'),
+            ('ST1', 'Steel/Tin Cans', 2.20, 'Food cans, tin containers'),
+            ('PL1', 'Plastic PET', 4.50, 'Clear plastic bottles (PET)'),
+            ('PL2', 'Plastic HDPE', 3.80, 'Milk bottles, detergent containers'),
+            ('GL1', 'Glass', 0.60, 'Clear and coloured glass bottles'),
+            ('CU1', 'Copper', 120.00, 'Clean copper wire and pipe'),
+            ('BR1', 'Brass', 65.00, 'Brass fittings and scrap'),
+            ('AL2', 'Aluminium Scrap', 18.00, 'Mixed aluminium scrap'),
+            ('ST2', 'Stainless Steel', 15.00, '304/316 stainless steel'),
+            ('PB1', 'Lead', 22.00, 'Lead batteries and weights')
         ]
-        cursor.executemany('INSERT INTO materials (name, price_per_kg) VALUES (?, ?)', materials)
+        cursor.executemany('INSERT INTO materials (code, name, price_per_kg, description) VALUES (?, ?, ?, ?)', materials)
     
     conn.commit()
     conn.close()
@@ -110,7 +120,8 @@ def dashboard():
     
     today = datetime.now().date()
     cursor.execute('''
-        SELECT t.*, s.full_name as seller_name, s.id_number as seller_id_number, m.name as material_name
+        SELECT t.*, s.full_name as seller_name, s.id_number as seller_id_number, 
+               m.name as material_name, m.code as material_code
         FROM transactions t
         JOIN sellers s ON t.seller_id = s.id
         JOIN materials m ON t.material_id = m.id
@@ -156,7 +167,7 @@ def new_transaction():
         material_id = request.form['material_id']
         weight = float(request.form['weight'])
         
-        cursor.execute('SELECT price_per_kg FROM materials WHERE id = ?', (material_id,))
+        cursor.execute('SELECT code, price_per_kg FROM materials WHERE id = ?', (material_id,))
         material = cursor.fetchone()
         amount = weight * material['price_per_kg']
         
@@ -172,17 +183,17 @@ def new_transaction():
         
         ticket_number = str(uuid.uuid4())[:8].upper()
         cursor.execute('''
-            INSERT INTO transactions (ticket_number, seller_id, material_id, weight_kg, amount)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (ticket_number, seller_id, material_id, weight, amount))
+            INSERT INTO transactions (ticket_number, seller_id, material_id, material_code, weight_kg, amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (ticket_number, seller_id, material_id, material['code'], weight, amount))
         
         conn.commit()
         conn.close()
         
-        flash(f'Transaction saved! Ticket: {ticket_number}', 'success')
+        flash(f'✓ Transaction saved! Ticket: {ticket_number} | {material["code"]}: {weight}kg @ R{material["price_per_kg"]}/kg', 'success')
         return redirect(url_for('dashboard'))
     
-    cursor.execute('SELECT id, name, price_per_kg FROM materials ORDER BY name')
+    cursor.execute('SELECT id, code, name, price_per_kg FROM materials WHERE is_active = 1 ORDER BY code')
     materials = cursor.fetchall()
     conn.close()
     
@@ -209,11 +220,12 @@ def reports():
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT m.name, COALESCE(SUM(t.weight_kg), 0) as weight, COALESCE(SUM(t.amount), 0) as amount
+        SELECT m.code, m.name, COALESCE(SUM(t.weight_kg), 0) as weight, COALESCE(SUM(t.amount), 0) as amount
         FROM materials m
         LEFT JOIN transactions t ON m.id = t.material_id AND t.timestamp >= ?
-        GROUP BY m.id, m.name
-        ORDER BY m.name
+        WHERE m.is_active = 1
+        GROUP BY m.id, m.code, m.name
+        ORDER BY m.code
     ''', (start_date,))
     
     summary = cursor.fetchall()
@@ -250,6 +262,17 @@ def sellers():
     conn.close()
     
     return render_template('sellers.html', sellers=sellers, active_page='sellers')
+
+@app.route('/materials')
+def materials():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM materials WHERE is_active = 1 ORDER BY code')
+    materials = cursor.fetchall()
+    conn.close()
+    
+    return render_template('materials.html', materials=materials, active_page='materials')
 
 @app.route('/api/get_weight')
 def api_get_weight():

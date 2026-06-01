@@ -1,0 +1,1 @@
+printf '%s\n' 'class Config:' '    SECRET_KEY = "your-secret-key"' '    SQLALCHEMY_DATABASE_URI = "sqlite:///scrapyard.db"' '    SQLALCHEMY_TRACK_MODIFICATIONS = False' '    SCALE_PORT = "COM3"' '    SCALE_BAUDRATE = 9600' '    SCALE_TIMEOUT = 1' > config.py
