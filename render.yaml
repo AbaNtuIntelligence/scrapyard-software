@@ -1,0 +1,14 @@
+﻿services:
+  - type: web
+    name: scrapsoft
+    runtime: python
+    repo: https://github.com/AbaNtuIntelligence/scrapyard-software
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECRET_KEY
+        generateValue: true

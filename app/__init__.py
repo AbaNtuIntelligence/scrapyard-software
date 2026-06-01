@@ -12,10 +12,14 @@ app.config.from_object(Config)
 # Use environment variable for secret key in production
 app.secret_key = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
 
-# Database setup
+# Database setup - Use /tmp for Render's ephemeral storage
 def get_db():
-    # Use a writable location for database on Render
-    db_path = '/tmp/scrapyard.db' if os.environ.get('RENDER') else 'scrapyard.db'
+    # Render uses /tmp as writable directory
+    if os.environ.get('RENDER'):
+        db_path = '/tmp/scrapyard.db'
+    else:
+        db_path = 'scrapyard.db'
+    
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
@@ -80,7 +84,6 @@ init_db()
 def get_current_weight():
     """Read weight from scale - returns float or None"""
     # For testing without hardware, return random weight
-    # Set to False when hardware is connected
     USE_MOCK_MODE = True
     
     if USE_MOCK_MODE:
@@ -154,8 +157,8 @@ def dashboard():
     
     return render_template('index.html', 
                          today_transactions=today_transactions,
-                         today_weight=totals['total_weight'],
-                         today_amount=totals['total_amount'],
+                         today_weight=totals['total_weight'] or 0,
+                         today_amount=totals['total_amount'] or 0,
                          active_page='dashboard')
 
 @app.route('/new_transaction', methods=['GET', 'POST'])
@@ -243,8 +246,8 @@ def reports():
     
     return render_template('reports.html', 
                          summary=summary,
-                         total_weight=totals['total_weight'],
-                         total_amount=totals['total_amount'],
+                         total_weight=totals['total_weight'] or 0,
+                         total_amount=totals['total_amount'] or 0,
                          period=period,
                          active_page='reports')
 
