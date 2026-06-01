@@ -1,34 +1,17 @@
 ﻿# Python
 __pycache__/
 *.py[cod]
-*.class
-*.so
-.Python
 .venv/
 venv/
-env/
-ENV/
-.venv
+.env
 
 # Database
 *.db
 *.sqlite
-*.sqlite3
-
-# Flask
-instance/
-.env
-.flaskenv
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Logs
-*.log
-logs/
 
 # OS
 .DS_Store
@@ -36,8 +19,3 @@ Thumbs.db
 
 # Secrets
 config.py
-!config.example.py
-
-# Uploads
-uploads/
-static/uploads/

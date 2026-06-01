@@ -4,14 +4,19 @@ from datetime import datetime, timedelta
 import sqlite3
 import uuid
 import random
+import os
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'scrapyard-secret-key-2026'
+
+# Use environment variable for secret key in production
+app.secret_key = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
 
 # Database setup
 def get_db():
-    conn = sqlite3.connect('scrapyard.db')
+    # Use a writable location for database on Render
+    db_path = '/tmp/scrapyard.db' if os.environ.get('RENDER') else 'scrapyard.db'
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -282,4 +287,4 @@ def logout():
     return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=10000)
