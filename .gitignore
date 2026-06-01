@@ -17,5 +17,5 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Secrets
-config.py
+# Don't ignore config.py for deployment
+# config.py is now tracked

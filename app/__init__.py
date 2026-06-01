@@ -1,20 +1,29 @@
 ﻿from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from config import Config
 from datetime import datetime, timedelta
 import sqlite3
 import uuid
 import random
 import os
 
-app = Flask(__name__)
-app.config.from_object(Config)
+# Try to import config, fallback to environment variables
+try:
+    from config import Config
+    app = Flask(__name__)
+    app.config.from_object(Config)
+except ImportError:
+    # Fallback configuration for production without config.py
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///scrapyard.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SCALE_PORT'] = os.environ.get('SCALE_PORT', 'COM3')
+    app.config['SCALE_BAUDRATE'] = int(os.environ.get('SCALE_BAUDRATE', 9600))
+    app.config['SCALE_TIMEOUT'] = int(os.environ.get('SCALE_TIMEOUT', 1))
 
-# Use environment variable for secret key in production
-app.secret_key = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
+app.secret_key = app.config.get('SECRET_KEY', 'scrapyard-secret-key-2026')
 
 # Database setup - Use /tmp for Render's ephemeral storage
 def get_db():
-    # Render uses /tmp as writable directory
     if os.environ.get('RENDER'):
         db_path = '/tmp/scrapyard.db'
     else:
@@ -83,35 +92,12 @@ init_db()
 # Scale reading function
 def get_current_weight():
     """Read weight from scale - returns float or None"""
-    # For testing without hardware, return random weight
     USE_MOCK_MODE = True
     
     if USE_MOCK_MODE:
         return round(random.uniform(0.5, 50.0), 2)
     
-    # Hardware mode - uncomment when scale is connected
-    """
-    try:
-        import serial
-        import re
-        
-        ser = serial.Serial(
-            port=app.config['SCALE_PORT'],
-            baudrate=app.config['SCALE_BAUDRATE'],
-            timeout=app.config['SCALE_TIMEOUT']
-        )
-        line = ser.readline().decode('ascii', errors='ignore').strip()
-        ser.close()
-        
-        match = re.search(r"(\\d+[\\.\\,]?\\d*)", line)
-        if match:
-            weight_str = match.group(1).replace(',', '.')
-            return float(weight_str)
-        return None
-    except Exception as e:
-        print(f"Scale error: {e}")
-        return None
-    """
+    return None
 
 @app.route('/')
 def index():
@@ -122,7 +108,6 @@ def dashboard():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Get today's transactions
     today = datetime.now().date()
     cursor.execute('''
         SELECT t.*, s.full_name as seller_name, s.id_number as seller_id_number, m.name as material_name
@@ -134,7 +119,6 @@ def dashboard():
     ''', (today,))
     rows = cursor.fetchall()
     
-    # Convert to list of dicts and format time
     today_transactions = []
     for row in rows:
         trans = dict(row)
@@ -145,7 +129,6 @@ def dashboard():
             trans['time_display'] = ''
         today_transactions.append(trans)
     
-    # Calculate today's totals
     cursor.execute('''
         SELECT COALESCE(SUM(weight_kg), 0) as total_weight, COALESCE(SUM(amount), 0) as total_amount
         FROM transactions
@@ -173,12 +156,10 @@ def new_transaction():
         material_id = request.form['material_id']
         weight = float(request.form['weight'])
         
-        # Get material price
         cursor.execute('SELECT price_per_kg FROM materials WHERE id = ?', (material_id,))
         material = cursor.fetchone()
         amount = weight * material['price_per_kg']
         
-        # Create or get seller
         cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
         seller = cursor.fetchone()
         
@@ -189,7 +170,6 @@ def new_transaction():
                          (seller_name, id_number, phone))
             seller_id = cursor.lastrowid
         
-        # Create transaction
         ticket_number = str(uuid.uuid4())[:8].upper()
         cursor.execute('''
             INSERT INTO transactions (ticket_number, seller_id, material_id, weight_kg, amount)
@@ -202,7 +182,6 @@ def new_transaction():
         flash(f'Transaction saved! Ticket: {ticket_number}', 'success')
         return redirect(url_for('dashboard'))
     
-    # GET request - show form
     cursor.execute('SELECT id, name, price_per_kg FROM materials ORDER BY name')
     materials = cursor.fetchall()
     conn.close()
@@ -274,7 +253,6 @@ def sellers():
 
 @app.route('/api/get_weight')
 def api_get_weight():
-    """API endpoint to get current weight from scale"""
     try:
         weight = get_current_weight()
         if weight is not None:
