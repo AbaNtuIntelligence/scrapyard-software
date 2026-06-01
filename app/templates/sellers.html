@@ -1,0 +1,40 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="table-container">
+    <h5 class="mb-4">
+        <i class="fas fa-users"></i> Registered Sellers
+    </h5>
+    
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th>ID Number</th>
+                    <th>Phone</th>
+                    <th>First Transaction</th>
+                    <th>Total Transactions</th>
+                    <th>Total Earned</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for seller in sellers %}
+                <tr>
+                    <td>{{ seller.full_name }}</td>
+                    <td>{{ seller.id_number }}</td>
+                    <td>{{ seller.phone or '-' }}</td>
+                    <td>{% if seller.first_transaction %}{{ seller.first_transaction[:10] if seller.first_transaction is string else seller.first_transaction.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</td>
+                    <td>{{ seller.transaction_count }}</td>
+                    <td>R {{ seller.total_earned|round(2) }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center">No sellers registered yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
