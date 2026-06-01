@@ -2,6 +2,7 @@
 from config import Config
 from datetime import datetime, timedelta
 import sqlite3
+import json
 import uuid
 import random
 
@@ -71,39 +72,11 @@ def init_db():
 # Initialize database on startup
 init_db()
 
-# Scale reading function
+# Scale reading function (mock for now - replace with actual serial)
 def get_current_weight():
-    """Read weight from scale - returns float or None"""
-    # For testing without hardware, return random weight
-    # Set to False when hardware is connected
-    USE_MOCK_MODE = True
-    
-    if USE_MOCK_MODE:
-        return round(random.uniform(0.5, 50.0), 2)
-    
-    # Hardware mode - uncomment when scale is connected
-    """
-    try:
-        import serial
-        import re
-        
-        ser = serial.Serial(
-            port=app.config['SCALE_PORT'],
-            baudrate=app.config['SCALE_BAUDRATE'],
-            timeout=app.config['SCALE_TIMEOUT']
-        )
-        line = ser.readline().decode('ascii', errors='ignore').strip()
-        ser.close()
-        
-        match = re.search(r"(\\d+[\\.\\,]?\\d*)", line)
-        if match:
-            weight_str = match.group(1).replace(',', '.')
-            return float(weight_str)
-        return None
-    except Exception as e:
-        print(f"Scale error: {e}")
-        return None
-    """
+    # For testing, return a random weight
+    # Replace this with actual serial port reading
+    return round(random.uniform(0.5, 50.0), 2)
 
 @app.route('/')
 def index():
@@ -130,7 +103,9 @@ def dashboard():
     today_transactions = []
     for row in rows:
         trans = dict(row)
+        # Extract time from timestamp string
         if trans.get('timestamp'):
+            # SQLite returns timestamp as string like "2026-06-01 14:30:00"
             time_str = trans['timestamp'][11:16] if len(trans['timestamp']) > 16 else trans['timestamp']
             trans['time_display'] = time_str
         else:
@@ -266,15 +241,8 @@ def sellers():
 
 @app.route('/api/get_weight')
 def api_get_weight():
-    """API endpoint to get current weight from scale"""
-    try:
-        weight = get_current_weight()
-        if weight is not None:
-            return jsonify({'success': True, 'weight': weight})
-        else:
-            return jsonify({'success': False, 'error': 'Could not read from scale'}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    weight = get_current_weight()
+    return jsonify({'weight': weight})
 
 @app.route('/logout')
 def logout():

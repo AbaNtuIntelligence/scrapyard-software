@@ -35,10 +35,10 @@
                         <label class="form-label">
                             <i class="fas fa-cube"></i> Material Type *
                         </label>
-                        <select name="material_id" class="form-select" required>
+                        <select name="material_id" id="material_id" class="form-select" required>
                             <option value="">Select material...</option>
                             {% for material in materials %}
-                            <option value="{{ material.id }}">
+                            <option value="{{ material.id }}" data-price="{{ material.price_per_kg }}">
                                 {{ material.name }} - R{{ material.price_per_kg }}/kg
                             </option>
                             {% endfor %}
@@ -52,7 +52,7 @@
                         <input type="number" step="0.01" name="weight" id="weight" class="form-control" required>
                         <small class="text-muted">
                             <i class="fas fa-microchip"></i> 
-                            <a href="#" id="readScaleBtn" class="text-primary">Read from Scale</a>
+                            <a href="javascript:void(0)" id="readScaleBtn" class="text-primary">Read from Scale</a>
                         </small>
                     </div>
                     
@@ -60,7 +60,7 @@
                         <label class="form-label">
                             <i class="fas fa-calculator"></i> Calculated Amount
                         </label>
-                        <input type="text" id="calculated_amount" class="form-control" readonly>
+                        <input type="text" id="calculated_amount" class="form-control" readonly style="font-size: 1.2rem; font-weight: bold; background-color: #e8f5e9;">
                     </div>
                 </div>
                 
@@ -78,44 +78,81 @@
 
 {% block scripts %}
 <script>
-    // Calculate amount when weight or material changes
-    document.querySelector('select[name="material_id"]').addEventListener('change', calculateAmount);
-    document.querySelector('input[name="weight"]').addEventListener('input', calculateAmount);
+    // Get DOM elements
+    const materialSelect = document.getElementById('material_id');
+    const weightInput = document.getElementById('weight');
+    const amountDisplay = document.getElementById('calculated_amount');
+    const readScaleBtn = document.getElementById('readScaleBtn');
     
+    // Function to calculate and display amount
     function calculateAmount() {
-        const materialSelect = document.querySelector('select[name="material_id"]');
-        const weight = parseFloat(document.querySelector('input[name="weight"]').value) || 0;
+        // Get selected material price from data-price attribute
+        const selectedOption = materialSelect.options[materialSelect.selectedIndex];
+        const price = selectedOption ? parseFloat(selectedOption.getAttribute('data-price')) : 0;
         
-        if (materialSelect.value) {
-            const selectedOption = materialSelect.options[materialSelect.selectedIndex];
-            const priceText = selectedOption.text.match(/R([\d.]+)\/kg/);
-            if (priceText && weight > 0) {
-                const price = parseFloat(priceText[1]);
-                const amount = price * weight;
-                document.getElementById('calculated_amount').value = 'R ' + amount.toFixed(2);
-            } else {
-                document.getElementById('calculated_amount').value = '';
-            }
+        // Get weight value
+        const weight = parseFloat(weightInput.value) || 0;
+        
+        // Calculate amount
+        if (price > 0 && weight > 0) {
+            const amount = price * weight;
+            amountDisplay.value = 'R ' + amount.toFixed(2);
+            // Add a visual indicator
+            amountDisplay.style.backgroundColor = '#c8e6c9';
         } else {
-            document.getElementById('calculated_amount').value = '';
+            amountDisplay.value = '';
+            amountDisplay.style.backgroundColor = '#e8f5e9';
         }
     }
     
-    // Read from scale via API
-    document.getElementById('readScaleBtn').addEventListener('click', async function(e) {
-        e.preventDefault();
-        try {
-            const response = await fetch('/api/get_weight');
-            const data = await response.json();
-            if (data.weight) {
-                document.querySelector('input[name="weight"]').value = data.weight;
-                calculateAmount();
-            } else {
-                alert('Could not read from scale. Please check connection.');
-            }
-        } catch (error) {
-            alert('Scale error: ' + error.message);
-        }
-    });
+    // Add event listeners
+    if (materialSelect) {
+        materialSelect.addEventListener('change', calculateAmount);
+    }
+    
+    if (weightInput) {
+        weightInput.addEventListener('input', calculateAmount);
+    }
+    
+    // Read from scale function
+    if (readScaleBtn) {
+        readScaleBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const originalText = readScaleBtn.textContent;
+            readScaleBtn.textContent = ' Reading...';
+            readScaleBtn.style.pointerEvents = 'none';
+            
+            fetch('/api/get_weight')
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.success && data.weight) {
+                        weightInput.value = data.weight.toFixed(2);
+                        calculateAmount();
+                        alert('✓ Weight read successfully: ' + data.weight + ' kg');
+                    } else {
+                        alert('✗ Could not read from scale. ' + (data.error || 'Please check connection.'));
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error:', error);
+                    alert('✗ Scale error: Could not connect to server. Make sure the application is running.');
+                })
+                .finally(function() {
+                    readScaleBtn.textContent = originalText;
+                    readScaleBtn.style.pointerEvents = 'auto';
+                });
+        });
+    }
+    
+    // Also calculate on page load if values exist
+    if (weightInput.value && materialSelect.value) {
+        calculateAmount();
+    }
 </script>
 {% endblock %}
