@@ -1,5 +1,7 @@
-﻿import random
+﻿# app/scale_reader.py
+import random
 import re
+from threading import Lock
 
 class ScaleReader:
     def __init__(self):
@@ -9,6 +11,7 @@ class ScaleReader:
             'scale_3': {'name': 'Processing Scale', 'port': 'COM5'},
             'scale_4': {'name': 'Weighbridge Scale', 'port': 'COM6'}
         }
+        self.locks = {scale_id: Lock() for scale_id in self.scales}
     
     def read_weight(self, scale_id='scale_1'):
         """Mock weight reading - replace with actual serial when hardware is available"""
