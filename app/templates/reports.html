@@ -1,72 +1,41 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="table-container">
-    <h5 class="mb-4">
-        <i class="fas fa-chart-bar"></i> Transaction Reports
-    </h5>
-    
-    <div class="btn-group mb-4" role="group">
-        <a href="{{ url_for('reports', period='daily') }}" class="btn btn-outline-primary {% if period == 'daily' %}active{% endif %}">
-            <i class="fas fa-calendar-day"></i> Daily
-        </a>
-        <a href="{{ url_for('reports', period='weekly') }}" class="btn btn-outline-primary {% if period == 'weekly' %}active{% endif %}">
-            <i class="fas fa-calendar-week"></i> Weekly
-        </a>
-        <a href="{{ url_for('reports', period='monthly') }}" class="btn btn-outline-primary {% if period == 'monthly' %}active{% endif %}">
-            <i class="fas fa-calendar-alt"></i> Monthly
-        </a>
-        <a href="{{ url_for('reports', period='yearly') }}" class="btn btn-outline-primary {% if period == 'yearly' %}active{% endif %}">
-            <i class="fas fa-calendar-year"></i> Yearly
-        </a>
+<div class="container">
+    <h2>Reports</h2>
+    <div class="btn-group mb-3">
+        <a href="?period=daily" class="btn btn-outline-primary">Daily</a>
+        <a href="?period=weekly" class="btn btn-outline-primary">Weekly</a>
+        <a href="?period=monthly" class="btn btn-outline-primary">Monthly</a>
+        <a href="?period=yearly" class="btn btn-outline-primary">Yearly</a>
     </div>
-    
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="alert alert-info">
-                <strong>Total Weight:</strong> {{ total_weight|round(2) }} kg
-            </div>
+    <div class="card">
+        <div class="card-body">
+            <h5>Summary for {{ period }}</h5>
+            <table class="table">
+                <thead>
+                    <tr><th>Material</th><th>Weight (kg)</th><th>Amount (R)</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in summary %}
+                    <tr>
+                        <td>{{ item.name }}</td>
+                        <td>{{ "%.2f"|format(item.weight) }}</td>
+                        <td>{{ "%.2f"|format(item.amount) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3">No data</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="table-dark">
+                        <th>Total</th>
+                        <th>{{ "%.2f"|format(total_weight) }} kg</th>
+                        <th>R {{ "%.2f"|format(total_amount) }}</th>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
-        <div class="col-md-6">
-            <div class="alert alert-success">
-                <strong>Total Paid:</strong> R {{ total_amount|round(2) }}
-            </div>
-        </div>
-    </div>
-    
-    <div class="table-responsive">
-        <table class="table table-bordered">
-            <thead class="table-dark">
-                <tr>
-                    <th>Material Type</th>
-                    <th>Total Weight (kg)</th>
-                    <th>Total Paid (R)</th>
-                    <th>Average Price/kg</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for material in summary %}
-                <tr>
-                    <td>{{ material.name }}</td>
-                    <td>{{ material.weight|round(2) }}</td>
-                    <td>R {{ material.amount|round(2) }}</td>
-                    <td>R {{ (material.amount / material.weight)|round(2) if material.weight > 0 else 0 }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" class="text-center">No transactions for this period</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            <tfoot class="table-secondary">
-                <tr>
-                    <th>TOTALS</th>
-                    <th>{{ total_weight|round(2) }} kg</th>
-                    <th>R {{ total_amount|round(2) }}</th>
-                    <th></th>
-                </tr>
-            </tfoot>
-        </table>
     </div>
 </div>
 {% endblock %}

@@ -3,79 +3,58 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-6">
-        <div class="card card-stats">
+        <div class="card bg-primary text-white">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-2">Today's Total Weight</h6>
-                        <h2 class="mb-0">{{ today_weight|default(0)|round(2) }} kg</h2>
-                    </div>
-                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
-                        <i class="fas fa-weight-hanging"></i>
-                    </div>
-                </div>
+                <h5 class="card-title">Today's Total Weight</h5>
+                <h2 class="card-text">{{ "%.2f"|format(today_weight) }} kg</h2>
             </div>
         </div>
     </div>
     <div class="col-md-6">
-        <div class="card card-stats">
+        <div class="card bg-success text-white">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-2">Today's Total Payment</h6>
-                        <h2 class="mb-0">R {{ today_amount|default(0)|round(2) }}</h2>
-                    </div>
-                    <div class="stat-icon bg-success bg-opacity-10 text-success">
-                        <i class="fas fa-money-bill-wave"></i>
-                    </div>
-                </div>
+                <h5 class="card-title">Today's Total Payment</h5>
+                <h2 class="card-text">R {{ "%.2f"|format(today_amount) }}</h2>
             </div>
         </div>
     </div>
 </div>
 
-<div class="table-container">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">
-            <i class="fas fa-history"></i> Today's Transactions
-        </h5>
-        <a href="{{ url_for('new_transaction') }}" class="btn btn-primary-custom btn-sm">
-            <i class="fas fa-plus"></i> New Transaction
-        </a>
+<div class="card">
+    <div class="card-header">
+        <h5>Today's Transactions</h5>
     </div>
-    <div class="table-responsive">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Seller Name</th>
-                    <th>ID Number</th>
-                    <th>Material</th>
-                    <th>Weight (kg)</th>
-                    <th>Amount (R)</th>
-                    <th>Ticket</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for transaction in today_transactions %}
-                <tr>
-                    <td>{% if transaction.timestamp %}{{ transaction.timestamp[:16] if transaction.timestamp is string else transaction.timestamp.strftime('%H:%M') }}{% endif %}</td>
-                    <td>{{ transaction.seller_name }}</td>
-                    <td>{{ transaction.seller_id_number }}</td>
-                    <td>{{ transaction.material_name }}</td>
-                    <td>{{ transaction.weight_kg }}</td>
-                    <td>R {{ transaction.amount }}</td>
-                    <td><code>{{ transaction.ticket_number }}</code></td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="text-center text-muted">
-                        <i class="fas fa-inbox"></i> No transactions today
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Seller</th>
+                        <th>Material</th>
+                        <th>Weight (kg)</th>
+                        <th>Amount (R)</th>
+                        <th>Ticket</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in today_transactions %}
+                    <tr>
+                        <td>{{ tx.time_display }}</td>
+                        <td>{{ tx.seller_name }}</td>
+                        <td>{{ tx.material_name }}</td>
+                        <td>{{ tx.weight_kg }}</td>
+                        <td>{{ tx.amount }}</td>
+                        <td>{{ tx.ticket_number }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center">No transactions today</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 {% endblock %}

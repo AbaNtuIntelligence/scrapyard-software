@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scale Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="card">
+            <div class="card-header">
+                <h3>Scale Reader Test</h3>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label>Weight (kg)</label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" id="weight" class="form-control">
+                        <button id="readBtn" class="btn btn-primary">Read Scale</button>
+                    </div>
+                    <div id="status" class="mt-2"></div>
+                </div>
+                <div class="mb-3">
+                    <label>Material</label>
+                    <select id="material" class="form-control">
+                        <option value="1.50">Cardboard (R1.50/kg)</option>
+                        <option value="25.00">Aluminium Cans (R25.00/kg)</option>
+                        <option value="2.20">Steel Cans (R2.20/kg)</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label>Amount</label>
+                    <input type="text" id="amount" class="form-control" readonly style="font-weight:bold;">
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const weightInput = document.getElementById("weight");
+        const amountField = document.getElementById("amount");
+        const readBtn = document.getElementById("readBtn");
+        const statusDiv = document.getElementById("status");
+        const materialSelect = document.getElementById("material");
+
+        function calculateAmount() {
+            const price = parseFloat(materialSelect.value);
+            const weight = parseFloat(weightInput.value) || 0;
+            if (price && weight) {
+                amountField.value = "R " + (price * weight).toFixed(2);
+            } else {
+                amountField.value = "";
+            }
+        }
+
+        async function readScale() {
+            readBtn.disabled = true;
+            readBtn.textContent = "Reading...";
+            statusDiv.innerHTML = "<span class=\"text-info\">Connecting to scale...</span>";
+            try {
+                const response = await fetch("/api/get_weight?mock=true");
+                const data = await response.json();
+                if (data.success && data.weight) {
+                    weightInput.value = data.weight.toFixed(2);
+                    statusDiv.innerHTML = "<span class=\"text-success\">✓ Weight: " + data.weight + " kg</span>";
+                    calculateAmount();
+                } else {
+                    statusDiv.innerHTML = "<span class=\"text-danger\">✗ Failed to read scale</span>";
+                }
+            } catch (error) {
+                statusDiv.innerHTML = "<span class=\"text-danger\">✗ Error: " + error.message + "</span>";
+            } finally {
+                readBtn.disabled = false;
+                readBtn.textContent = "Read Scale";
+                setTimeout(() => {
+                    if (statusDiv.innerHTML.includes("✓") || statusDiv.innerHTML.includes("✗")) {
+                        statusDiv.innerHTML = "";
+                    }
+                }, 3000);
+            }
+        }
+
+        weightInput.addEventListener("input", calculateAmount);
+        materialSelect.addEventListener("change", calculateAmount);
+        readBtn.addEventListener("click", readScale);
+        console.log("✅ Standalone page loaded - Ready to test scale");
+    </script>
+</body>
+</html>

@@ -4,119 +4,27 @@ import sqlite3
 import uuid
 import random
 import os
-from app.scale_reader import scale_reader, get_mock_weight
 
-# Add this function for mock weight testing
-def get_mock_weight():
-    """Generate mock weight for testing without hardware"""
-    return round(random.uniform(0.5, 100.0), 2)
+# ============ CREATE APP INSTANCE FIRST ============
+app = Flask(__name__)
 
-# Then add your API routes (find where your routes are and add these)
-@app.route('/api/get_weight')
-def api_get_weight():
-    """Get weight from specified scale"""
-    scale_id = request.args.get('scale', 'scale_1')
-    use_mock = request.args.get('mock', 'false').lower() == 'true'
-    
-    # Use mock mode for testing without hardware
-    if use_mock:
-        weight = get_mock_weight()
-        return jsonify({
-            'success': True,
-            'weight': weight,
-            'scale': scale_id,
-            'mock': True
-        })
-    
-    # For now, since we don't have hardware, always use mock mode
-    # When you have hardware, you'll uncomment the serial reading code
-    weight = get_mock_weight()
-    return jsonify({
-        'success': True,
-        'weight': weight,
-        'scale': scale_id,
-        'mock': True,
-        'message': 'Using mock mode - Connect hardware for real readings'
-    })
-    
-    # TODO: Uncomment this when you have physical scale hardware
-    """
-    # Read from actual hardware
-    try:
-        import serial
-        import serial.tools.list_ports
-        
-        # Get COM port from config or use default
-        port = app.config.get('SCALE_PORT', 'COM3')
-        baudrate = app.config.get('SCALE_BAUDRATE', 9600)
-        
-        ser = serial.Serial(port=port, baudrate=baudrate, timeout=1)
-        line = ser.readline().decode('ascii', errors='ignore').strip()
-        ser.close()
-        
-        import re
-        match = re.search(r"(\d+\.?\d*)", line)
-        if match:
-            weight = float(match.group(1))
-            return jsonify({
-                'success': True,
-                'weight': weight,
-                'scale': scale_id,
-                'mock': False
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': f'Could not parse weight from: {line}'
-            }), 500
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-    """
-
-@app.route('/api/get_all_weights')
-def api_get_all_weights():
-    """Get weights from all scales (for dashboard)"""
-    # Return mock weights for all 4 scales
-    weights = {
-        'scale_1': {'weight': get_mock_weight(), 'name': 'Main Gate Scale'},
-        'scale_2': {'weight': get_mock_weight(), 'name': 'Secondary Scale'},
-        'scale_3': {'weight': get_mock_weight(), 'name': 'Processing Scale'},
-        'scale_4': {'weight': get_mock_weight(), 'name': 'Weighbridge Scale'}
-    }
-    return jsonify({'success': True, 'scales': weights})
-
-@app.route('/api/available_ports')
-def api_available_ports():
-    """Get available COM ports for debugging"""
-    try:
-        import serial.tools.list_ports
-        ports = serial.tools.list_ports.comports()
-        port_list = [{'port': port.device, 'description': port.description} for port in ports]
-        return jsonify({'ports': port_list})
-    except:
-        return jsonify({'ports': [], 'message': 'PySerial not installed or no ports found'})
-
-# Try to import config, fallback to environment variables
+# ============ CONFIGURATION ============
 try:
     from config import Config
-    app = Flask(__name__)
     app.config.from_object(Config)
 except ImportError:
-    # Fallback configuration for production without config.py
-    app = Flask(__name__)
+    # Fallback configuration
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///scrapyard.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SCALE_PORT'] = os.environ.get('SCALE_PORT', 'COM3')
     app.config['SCALE_BAUDRATE'] = int(os.environ.get('SCALE_BAUDRATE', 9600))
     app.config['SCALE_TIMEOUT'] = int(os.environ.get('SCALE_TIMEOUT', 1))
 
 app.secret_key = app.config.get('SECRET_KEY', 'scrapyard-secret-key-2026')
 
-# Database setup - Use /tmp for Render's ephemeral storage
+# ============ IMPORT SCALE READER ============
+from app.scale_reader import scale_reader, get_mock_weight
+
+# ============ DATABASE FUNCTIONS ============
 def get_db():
     if os.environ.get('RENDER'):
         db_path = '/tmp/scrapyard.db'
@@ -131,7 +39,7 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Create tables with material codes
+    # Create tables
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,7 +80,6 @@ def init_db():
         )
     ''')
     
-    # Create scale_config table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scale_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,7 +93,6 @@ def init_db():
         )
     ''')
     
-    # Create scale_calibration table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scale_calibration (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,16 +144,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize database on startup
+# Initialize database
 init_db()
 
-# Scale reading function
+# ============ HELPER FUNCTIONS ============
 def get_current_weight(scale_id='scale_1'):
-    """Read weight from scale - returns float or None"""
-    # For testing without hardware, return random weight
-    # Replace with actual serial reading when hardware is connected
-    return round(random.uniform(0.5, 50.0), 2)
+    """Get current weight from scale (mock for now)"""
+    return round(random.uniform(0.5, 100.0), 2)
 
+# ============ ROUTES ============
 @app.route('/')
 def index():
     return redirect(url_for('dashboard'))
@@ -441,11 +346,8 @@ def materials():
     
     return render_template('materials.html', materials=materials, active_page='materials')
 
-# ============ SCALE MANAGEMENT ROUTES ============
-
 @app.route('/scales')
 def scales_dashboard():
-    """Scale management dashboard"""
     conn = get_db()
     cursor = conn.cursor()
     
@@ -468,22 +370,34 @@ def scales_dashboard():
                          scales=scales,
                          active_page='scales')
 
+# ============ API ROUTES ============
 @app.route('/api/get_weight')
 def api_get_weight():
-    """Get weight from specified scale or default"""
+    """Get weight from specified scale"""
     scale_id = request.args.get('scale', 'scale_1')
+    use_mock = request.args.get('mock', 'false').lower() == 'true'
+    
+    if use_mock:
+        weight = get_mock_weight()
+        return jsonify({
+            'success': True,
+            'weight': weight,
+            'scale': scale_id,
+            'mock': True
+        })
+    
     weight = get_current_weight(scale_id)
     
     if weight is not None:
         return jsonify({
-            'success': True, 
+            'success': True,
             'weight': weight,
             'scale': scale_id
         })
     else:
         return jsonify({
-            'success': False, 
-            'error': f'Could not read from {scale_id} scale'
+            'success': False,
+            'error': f'Could not read from scale {scale_id}'
         }), 500
 
 @app.route('/api/get_all_weights')
@@ -499,28 +413,31 @@ def api_get_all_weights():
 
 @app.route('/api/set_default_scale', methods=['POST'])
 def api_set_default_scale():
-    """Set default scale for the current session"""
     data = request.json
     scale_id = data.get('scale_id')
-    
     session['default_scale'] = scale_id
-    
-    return jsonify({
-        'success': True,
-        'scale_id': scale_id,
-        'scale_name': f'Scale {scale_id}'
-    })
+    return jsonify({'success': True, 'scale_id': scale_id})
 
 @app.route('/api/get_default_scale')
 def api_get_default_scale():
-    """Get user's default scale"""
     default_scale = session.get('default_scale', 'scale_1')
     return jsonify({'default_scale': default_scale})
+
+@app.route('/api/available_ports')
+def api_available_ports():
+    ports = []
+    try:
+        import serial.tools.list_ports
+        ports = [{'port': p.device, 'description': p.description} for p in serial.tools.list_ports.comports()]
+    except:
+        pass
+    return jsonify({'ports': ports})
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('dashboard'))
 
+# ============ RUN APP ============
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=10000)
+    app.run(debug=True, host='0.0.0.0', port=10000)

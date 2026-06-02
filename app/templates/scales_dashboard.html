@@ -1,48 +1,22 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="container-fluid">
-    <h4 class="mb-4">
-        <i class="fas fa-balance-scale"></i> Scale Management
-    </h4>
-    
-    <div class="row">
-        {% if scales %}
-            {% for scale_id, scale in scales.items() %}
-            <div class="col-md-6 col-lg-3 mb-4">
-                <div class="card h-100 shadow-sm">
-                    <div class="card-header bg-white">
-                        <i class="fas fa-balance-scale me-2"></i>
-                        <strong>{{ scale.name }}</strong>
-                    </div>
-                    <div class="card-body">
-                        <div class="text-center mb-3">
-                            <h3 id="weight-{{ scale_id }}">---</h3>
-                            <small class="text-muted">{{ scale.location }}</small>
-                        </div>
-                        <div class="small">
-                            <div class="row mb-1">
-                                <div class="col-6 text-muted">Capacity:</div>
-                                <div class="col-6 text-end">{{ scale.capacity_kg }} kg</div>
-                            </div>
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary w-100 mt-3" 
-                                onclick="setDefaultScale('{{ scale_id }}', '{{ scale.name }}')">
-                            <i class="fas fa-star"></i> Set as Default
-                        </button>
-                    </div>
-                </div>
+<div class="row">
+    {% for scale_id, scale in scales.items() %}
+    <div class="col-md-3 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-balance-scale"></i> {{ scale.name }}
             </div>
-            {% endfor %}
-        {% else %}
-            <div class="col-12">
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle"></i> 
-                    No scales configured. Please run the database migration.
-                </div>
+            <div class="card-body">
+                <h3 id="weight-{{ scale_id }}">---</h3>
+                <small class="text-muted">{{ scale.location }}</small>
+                <hr>
+                <div>Capacity: {{ scale.capacity_kg }} kg</div>
             </div>
-        {% endif %}
+        </div>
     </div>
+    {% endfor %}
 </div>
 
 <script>
@@ -52,37 +26,12 @@
             const data = await response.json();
             if (data.success && data.scales) {
                 for (const [scaleId, scaleData] of Object.entries(data.scales)) {
-                    const weightEl = document.getElementById('weight-' + scaleId);
-                    if (weightEl && scaleData.weight) {
-                        weightEl.textContent = scaleData.weight.toFixed(1) + ' kg';
-                    }
+                    const el = document.getElementById('weight-' + scaleId);
+                    if (el) el.textContent = scaleData.weight.toFixed(1) + ' kg';
                 }
             }
-        } catch (error) {
-            console.log('Error refreshing weights:', error);
-        }
+        } catch(e) { console.log(e); }
     }
-    
-    async function setDefaultScale(scaleId, scaleName) {
-        try {
-            const response = await fetch('/api/set_default_scale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scale_id: scaleId })
-            });
-            const data = await response.json();
-            if (data.success) {
-                alert('✓ Default scale set to ' + scaleName);
-            } else {
-                alert('✗ Error: ' + (data.error || 'Unknown error'));
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('✗ Failed to set default scale');
-        }
-    }
-    
-    // Refresh weights every 5 seconds
     refreshWeights();
     setInterval(refreshWeights, 5000);
 </script>
