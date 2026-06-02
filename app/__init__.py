@@ -4,6 +4,100 @@ import sqlite3
 import uuid
 import random
 import os
+from app.scale_reader import scale_reader, get_mock_weight
+
+# Add this function for mock weight testing
+def get_mock_weight():
+    """Generate mock weight for testing without hardware"""
+    return round(random.uniform(0.5, 100.0), 2)
+
+# Then add your API routes (find where your routes are and add these)
+@app.route('/api/get_weight')
+def api_get_weight():
+    """Get weight from specified scale"""
+    scale_id = request.args.get('scale', 'scale_1')
+    use_mock = request.args.get('mock', 'false').lower() == 'true'
+    
+    # Use mock mode for testing without hardware
+    if use_mock:
+        weight = get_mock_weight()
+        return jsonify({
+            'success': True,
+            'weight': weight,
+            'scale': scale_id,
+            'mock': True
+        })
+    
+    # For now, since we don't have hardware, always use mock mode
+    # When you have hardware, you'll uncomment the serial reading code
+    weight = get_mock_weight()
+    return jsonify({
+        'success': True,
+        'weight': weight,
+        'scale': scale_id,
+        'mock': True,
+        'message': 'Using mock mode - Connect hardware for real readings'
+    })
+    
+    # TODO: Uncomment this when you have physical scale hardware
+    """
+    # Read from actual hardware
+    try:
+        import serial
+        import serial.tools.list_ports
+        
+        # Get COM port from config or use default
+        port = app.config.get('SCALE_PORT', 'COM3')
+        baudrate = app.config.get('SCALE_BAUDRATE', 9600)
+        
+        ser = serial.Serial(port=port, baudrate=baudrate, timeout=1)
+        line = ser.readline().decode('ascii', errors='ignore').strip()
+        ser.close()
+        
+        import re
+        match = re.search(r"(\d+\.?\d*)", line)
+        if match:
+            weight = float(match.group(1))
+            return jsonify({
+                'success': True,
+                'weight': weight,
+                'scale': scale_id,
+                'mock': False
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Could not parse weight from: {line}'
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    """
+
+@app.route('/api/get_all_weights')
+def api_get_all_weights():
+    """Get weights from all scales (for dashboard)"""
+    # Return mock weights for all 4 scales
+    weights = {
+        'scale_1': {'weight': get_mock_weight(), 'name': 'Main Gate Scale'},
+        'scale_2': {'weight': get_mock_weight(), 'name': 'Secondary Scale'},
+        'scale_3': {'weight': get_mock_weight(), 'name': 'Processing Scale'},
+        'scale_4': {'weight': get_mock_weight(), 'name': 'Weighbridge Scale'}
+    }
+    return jsonify({'success': True, 'scales': weights})
+
+@app.route('/api/available_ports')
+def api_available_ports():
+    """Get available COM ports for debugging"""
+    try:
+        import serial.tools.list_ports
+        ports = serial.tools.list_ports.comports()
+        port_list = [{'port': port.device, 'description': port.description} for port in ports]
+        return jsonify({'ports': port_list})
+    except:
+        return jsonify({'ports': [], 'message': 'PySerial not installed or no ports found'})
 
 # Try to import config, fallback to environment variables
 try:
