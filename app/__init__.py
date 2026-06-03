@@ -512,3 +512,67 @@ def api_generate_report():
 # ============ RUN APP ============
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=10000)
+
+# ============ MATERIALS API ROUTES ============
+@app.route('/api/materials', methods=['GET'])
+@login_required
+def api_get_materials():
+    """Get all materials as JSON"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM materials WHERE is_active = 1 ORDER BY code')
+    materials = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(m) for m in materials])
+
+@app.route('/api/materials', methods=['POST'])
+@admin_required
+def api_create_material():
+    """Create a new material"""
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
+            VALUES (?, ?, ?, ?, ?, 1)
+        ''', (data['code'], data['name'], data['inbound_price'], data['outbound_price'], data.get('description', '')))
+        conn.commit()
+        return jsonify({'success': True, 'id': cursor.lastrowid})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Material code or name already exists'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/materials/<int:material_id>', methods=['PUT'])
+@admin_required
+def api_update_material(material_id):
+    """Update an existing material"""
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE materials 
+            SET code = ?, name = ?, inbound_price = ?, outbound_price = ?, description = ?
+            WHERE id = ?
+        ''', (data['code'], data['name'], data['inbound_price'], data['outbound_price'], data.get('description', ''), material_id))
+        conn.commit()
+        return jsonify({'success': True})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Material code or name already exists'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/materials/<int:material_id>', methods=['DELETE'])
+@admin_required
+def api_delete_material(material_id):
+    """Delete a material (soft delete)"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE materials SET is_active = 0 WHERE id = ?', (material_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+print('✅ Materials API routes registered')
