@@ -19,3 +19,9 @@ Thumbs.db
 
 # Don't ignore config.py for deployment
 # config.py is now tracked
+# Add .venv to gitignore
+echo ".venv/" >> .gitignore
+echo "__pycache__/" >> .gitignore
+echo "*.pyc" >> .gitignore
+echo "scrapyard.db" >> .gitignore
+echo "app/scrapyard.db" >> .gitignore
