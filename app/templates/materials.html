@@ -1,33 +1,279 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header">
-        <h5>Materials & Codes</h5>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="fas fa-cubes"></i> Materials & Codes Management</h4>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMaterialModal">
+            <i class="fas fa-plus"></i> Add New Material
+        </button>
     </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Code</th>
-                        <th>Material Name</th>
-                        <th>Inbound Price (R/kg)</th>
-                        <th>Outbound Price (R/kg)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for m in materials %}
-                    <tr>
-                        <td><code>{{ m.code }}</code></td>
-                        <td>{{ m.name }}</td>
-                        <td>R {{ "%.2f"|format(m.inbound_price) }}</td>
-                        <td>R {{ "%.2f"|format(m.outbound_price) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+
+    <!-- Materials Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Code</th>
+                            <th>Material Name</th>
+                            <th>Inbound Price (R/kg)</th>
+                            <th>Outbound Price (R/kg)</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for material in materials %}
+                        <tr>
+                            <td><code class="fw-bold">{{ material.code }}</code></td>
+                            <td>{{ material.name }}</td>
+                            <td>R {{ "%.2f"|format(material.inbound_price) }}</td>
+                            <td>R {{ "%.2f"|format(material.outbound_price) }}</td>
+                            <td>{{ material.description or '-' }}</td>
+                            <td>
+                                {% if material.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-warning edit-material" 
+                                        data-id="{{ material.id }}"
+                                        data-code="{{ material.code }}"
+                                        data-name="{{ material.name }}"
+                                        data-inbound="{{ material.inbound_price }}"
+                                        data-outbound="{{ material.outbound_price }}"
+                                        data-description="{{ material.description }}"
+                                        data-active="{{ material.is_active }}">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-sm btn-danger delete-material" 
+                                        data-id="{{ material.id }}"
+                                        data-name="{{ material.name }}">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- Add Material Modal -->
+<div class="modal fade" id="addMaterialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-plus"></i> Add New Material</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addMaterialForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Material Code *</label>
+                        <input type="text" id="add_code" class="form-control" required placeholder="e.g., K4, AL1, CU1">
+                        <small class="text-muted">Unique identifier (max 10 characters)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Material Name *</label>
+                        <input type="text" id="add_name" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Inbound Price (R/kg) *</label>
+                            <input type="number" step="0.01" id="add_inbound" class="form-control" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Outbound Price (R/kg) *</label>
+                            <input type="number" step="0.01" id="add_outbound" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea id="add_description" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="add_active" class="form-check-input" checked>
+                            <label class="form-check-label">Active (visible in transactions)</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Material</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Material Modal -->
+<div class="modal fade" id="editMaterialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-edit"></i> Edit Material</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editMaterialForm">
+                <input type="hidden" id="edit_id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Material Code *</label>
+                        <input type="text" id="edit_code" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Material Name *</label>
+                        <input type="text" id="edit_name" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Inbound Price (R/kg) *</label>
+                            <input type="number" step="0.01" id="edit_inbound" class="form-control" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Outbound Price (R/kg) *</label>
+                            <input type="number" step="0.01" id="edit_outbound" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea id="edit_description" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" id="edit_active" class="form-check-input">
+                            <label class="form-check-label">Active</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteMaterialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-trash"></i> Delete Material</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteMaterialName"></strong>?</p>
+                <p class="text-danger">This action cannot be undone. Transactions with this material will retain the material code but the material will no longer be selectable.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmDeleteBtn" class="btn btn-danger">Delete Permanently</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Add Material
+    document.getElementById('addMaterialForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            code: document.getElementById('add_code').value.toUpperCase(),
+            name: document.getElementById('add_name').value,
+            inbound_price: parseFloat(document.getElementById('add_inbound').value),
+            outbound_price: parseFloat(document.getElementById('add_outbound').value),
+            description: document.getElementById('add_description').value,
+            is_active: document.getElementById('add_active').checked
+        };
+        
+        const response = await fetch('/api/materials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + error.error);
+        }
+    });
+    
+    // Edit Material - Populate modal
+    document.querySelectorAll('.edit-material').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('edit_id').value = btn.dataset.id;
+            document.getElementById('edit_code').value = btn.dataset.code;
+            document.getElementById('edit_name').value = btn.dataset.name;
+            document.getElementById('edit_inbound').value = btn.dataset.inbound;
+            document.getElementById('edit_outbound').value = btn.dataset.outbound;
+            document.getElementById('edit_description').value = btn.dataset.description || '';
+            document.getElementById('edit_active').checked = btn.dataset.active === '1' || btn.dataset.active === 'True';
+            new bootstrap.Modal(document.getElementById('editMaterialModal')).show();
+        });
+    });
+    
+    // Update Material
+    document.getElementById('editMaterialForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('edit_id').value;
+        const data = {
+            code: document.getElementById('edit_code').value.toUpperCase(),
+            name: document.getElementById('edit_name').value,
+            inbound_price: parseFloat(document.getElementById('edit_inbound').value),
+            outbound_price: parseFloat(document.getElementById('edit_outbound').value),
+            description: document.getElementById('edit_description').value,
+            is_active: document.getElementById('edit_active').checked
+        };
+        
+        const response = await fetch(`/api/materials/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + error.error);
+        }
+    });
+    
+    // Delete Material
+    let deleteId = null;
+    document.querySelectorAll('.delete-material').forEach(btn => {
+        btn.addEventListener('click', () => {
+            deleteId = btn.dataset.id;
+            document.getElementById('deleteMaterialName').textContent = btn.dataset.name;
+            new bootstrap.Modal(document.getElementById('deleteMaterialModal')).show();
+        });
+    });
+    
+    document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+        if (deleteId) {
+            const response = await fetch(`/api/materials/${deleteId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                const error = await response.json();
+                alert('Error: ' + error.error);
+            }
+        }
+    });
+</script>
 {% endblock %}

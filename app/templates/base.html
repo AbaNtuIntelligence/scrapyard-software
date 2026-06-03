@@ -254,7 +254,7 @@
     <div id="loading-screen">
         <div class="loading-content">
             <div class="loading-logo">
-                <img src="{{ url_for('static', filename='logo.png') }}" alt="Company Logo">
+                <img src="{{ url_for('static', filename='logo (2).png') }}" alt="Company Logo">
             </div>
             <div class="progress-container">
                 <div class="progress-bar-custom">
@@ -303,18 +303,21 @@
 
             <!-- Main Content -->
             <div class="col-md-10 p-0 main-content">
-                <nav class="navbar navbar-light bg-white shadow-sm px-4">
-                    <div class="container-fluid">
-                        <span class="navbar-brand">
-                            <i class="fas fa-weight-hanging"></i> Scrap Yard Management System
-                        </span>
-                        <div class="d-flex">
-                            <span class="text-muted me-3">
-                                <i class="fas fa-user"></i> {{ session.get('username', 'Admin') }}
-                            </span>
-                        </div>
-                    </div>
-                </nav>
+             <div class="d-flex align-items-center">
+    <i class="fas fa-user-circle me-2"></i>
+    <div>
+        <span class="fw-bold">{{ session.get('full_name', session.get('username', 'Guest')) }}</span>
+        {% if session.get('is_admin') %}
+            <span class="badge bg-danger ms-1">Admin</span>
+        {% else %}
+            <span class="badge bg-secondary ms-1">Operator</span>
+        {% endif %}
+        <br>
+        <small class="text-muted">
+            <i class="fas fa-clock"></i> Last login: {{ session.get('last_login', 'Just now') }}
+        </small>
+    </div>
+</div>
 
                 <div class="content-wrapper">
                     <div class="p-4">
@@ -342,7 +345,7 @@
                             </div>
                             <div class="col-md-4 text-center text-md-end">
                                 <small>
-                                    &copy; 2024 AbaNtu Intelligence | All Rights Reserved<br>
+                                    &copy; 2026 AbaNtu Intelligence | All Rights Reserved<br>
                                     <i class="fas fa-envelope"></i> info@abantu-intelligence.co.za
                                 </small>
                             </div>

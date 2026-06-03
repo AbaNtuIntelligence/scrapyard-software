@@ -1,41 +1,323 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="container">
-    <h2>Reports</h2>
-    <div class="btn-group mb-3">
-        <a href="?period=daily" class="btn btn-outline-primary">Daily</a>
-        <a href="?period=weekly" class="btn btn-outline-primary">Weekly</a>
-        <a href="?period=monthly" class="btn btn-outline-primary">Monthly</a>
-        <a href="?period=yearly" class="btn btn-outline-primary">Yearly</a>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="fas fa-chart-bar"></i> Reports Dashboard</h4>
+        <div class="btn-group">
+            <button class="btn btn-outline-secondary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+            <button class="btn btn-outline-success" id="exportExcelBtn">
+                <i class="fas fa-file-excel"></i> Export CSV
+            </button>
+        </div>
     </div>
-    <div class="card">
+
+    <!-- Report Controls -->
+    <div class="card mb-4">
         <div class="card-body">
-            <h5>Summary for {{ period }}</h5>
-            <table class="table">
-                <thead>
-                    <tr><th>Material</th><th>Weight (kg)</th><th>Amount (R)</th></tr>
-                </thead>
-                <tbody>
-                    {% for item in summary %}
-                    <tr>
-                        <td>{{ item.name }}</td>
-                        <td>{{ "%.2f"|format(item.weight) }}</td>
-                        <td>{{ "%.2f"|format(item.amount) }}</td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="3">No data</td></tr>
-                    {% endfor %}
-                </tbody>
-                <tfoot>
-                    <tr class="table-dark">
-                        <th>Total</th>
-                        <th>{{ "%.2f"|format(total_weight) }} kg</th>
-                        <th>R {{ "%.2f"|format(total_amount) }}</th>
-                    </tr>
-                </tfoot>
-            </table>
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label fw-bold">
+                        <i class="fas fa-chart-line"></i> Report Type
+                    </label>
+                    <select id="reportType" class="form-select">
+                        <option value="inbound">📥 Inbound Report (Purchases)</option>
+                        <option value="outbound" {% if not session.is_admin %}disabled{% endif %}>
+                            📤 Outbound Report (Sales) {% if not session.is_admin %}(Admin Only){% endif %}
+                        </option>
+                        <option value="seller">👥 Seller Performance Report</option>
+                        <option value="scale">⚖️ Scale Usage Report</option>
+                        <option value="inventory">📦 Inventory Valuation Report</option>
+                        <option value="comparison">📊 Period Comparison Report</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-3 mb-3">
+                    <label class="form-label fw-bold">
+                        <i class="fas fa-calendar-alt"></i> Date Range
+                    </label>
+                    <select id="dateRange" class="form-select">
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="week">This Week</option>
+                        <option value="month" selected>This Month</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-3 mb-3" id="customDateRange" style="display: none;">
+                    <label class="form-label fw-bold">
+                        <i class="fas fa-calendar-week"></i> Custom Date Range
+                    </label>
+                    <div class="input-group">
+                        <input type="date" id="startDate" class="form-control">
+                        <span class="input-group-text">to</span>
+                        <input type="date" id="endDate" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="col-md-3 mb-3 d-flex align-items-end">
+                    <button id="generateReportBtn" class="btn btn-primary w-100">
+                        <i class="fas fa-chart-line"></i> GENERATE REPORT
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4" id="summaryCards">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white shadow">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-weight-hanging"></i> Total Weight</h6>
+                    <h3 id="totalWeight">0 kg</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white shadow">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-money-bill-wave"></i> Total Amount</h6>
+                    <h3 id="totalAmount">R 0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white shadow">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-receipt"></i> Transactions</h6>
+                    <h3 id="transactionCount">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark shadow">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-calculator"></i> Average Price</h6>
+                    <h3 id="avgPrice">R 0.00</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Table -->
+    <div class="card">
+        <div class="card-header bg-dark text-white">
+            <h5 id="reportTitle" class="mb-0">
+                <i class="fas fa-file-alt"></i> Report Results
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover" id="reportTable">
+                    <thead class="table-dark" id="tableHeader">
+                        <tr>
+                            <th>Select report type and click GENERATE REPORT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportBody"></tbody>
+                </table>
+            </div>
+            <div id="loadingIndicator" class="text-center py-4" style="display: none;">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-2">Generating report...</p>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+    // Set default dates
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    document.getElementById('startDate').valueAsDate = firstDayOfMonth;
+    document.getElementById('endDate').valueAsDate = today;
+    
+    // Toggle custom date range
+    document.getElementById('dateRange').addEventListener('change', function() {
+        const customRange = document.getElementById('customDateRange');
+        customRange.style.display = this.value === 'custom' ? 'block' : 'none';
+        if (this.value !== 'custom') {
+            generateReport();
+        }
+    });
+    
+    // Generate report button
+    document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+    document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
+    
+    // Load report on page load
+    document.addEventListener('DOMContentLoaded', generateReport);
+    
+    async function generateReport() {
+        const reportType = document.getElementById('reportType').value;
+        const dateRange = document.getElementById('dateRange').value;
+        let startDate = '', endDate = '';
+        
+        if (dateRange === 'custom') {
+            startDate = document.getElementById('startDate').value;
+            endDate = document.getElementById('endDate').value;
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates');
+                return;
+            }
+        }
+        
+        // Show loading indicator
+        document.getElementById('loadingIndicator').style.display = 'block';
+        document.getElementById('reportBody').innerHTML = '';
+        
+        const params = new URLSearchParams({
+            report_type: reportType,
+            date_range: dateRange,
+            start_date: startDate,
+            end_date: endDate
+        });
+        
+        try {
+            const response = await fetch(`/api/reports/generate?${params}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                updateReportUI(data);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                showEmptyReport();
+            }
+        } catch (error) {
+            console.error('Report error:', error);
+            alert('Failed to generate report: ' + error.message);
+            showEmptyReport();
+        } finally {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+    }
+    
+    function showEmptyReport() {
+        document.getElementById('totalWeight').innerHTML = '0 kg';
+        document.getElementById('totalAmount').innerHTML = 'R 0';
+        document.getElementById('transactionCount').innerHTML = '0';
+        document.getElementById('avgPrice').innerHTML = 'R 0.00';
+        
+        const thead = document.getElementById('tableHeader');
+        const tbody = document.getElementById('reportBody');
+        thead.innerHTML = '<tr><th>No Data Available</th></tr>';
+        tbody.innerHTML = '<tr><td class="text-center text-muted py-4">No transactions found for this period</td></tr>';
+    }
+    
+    function updateReportUI(data) {
+        // Safely update summary cards with fallback values
+        const totalWeight = data.total_weight || 0;
+        const totalAmount = data.total_amount || 0;
+        const transactionCount = data.transaction_count || 0;
+        const avgPrice = data.avg_price || 0;
+        
+        document.getElementById('totalWeight').innerHTML = totalWeight.toFixed(2) + ' kg';
+        document.getElementById('totalAmount').innerHTML = 'R ' + totalAmount.toFixed(2);
+        document.getElementById('transactionCount').innerHTML = transactionCount;
+        document.getElementById('avgPrice').innerHTML = 'R ' + avgPrice.toFixed(2);
+        
+        // Update title
+        const titles = {
+            'inbound': '📥 Inbound Report - Purchases from Sellers',
+            'outbound': '📤 Outbound Report - Sales to Buyers',
+            'seller': '👥 Seller Performance Report',
+            'scale': '⚖️ Scale Usage Report',
+            'inventory': '📦 Inventory Valuation Report',
+            'comparison': '📊 Period Comparison Report'
+        };
+        const titleText = titles[data.report_type] || 'Report';
+        document.getElementById('reportTitle').innerHTML = `${titleText} (${data.period || 'Selected Period'})`;
+        
+        // Build table based on report type
+        const thead = document.getElementById('tableHeader');
+        const tbody = document.getElementById('reportBody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+        
+        const items = data.items || [];
+        
+        if (items.length === 0) {
+            thead.innerHTML = '<tr><th>No Data Available</th></tr>';
+            tbody.innerHTML = '<tr><td class="text-center text-muted py-4">No transactions found for this period</td></tr>';
+            return;
+        }
+        
+        if (data.report_type === 'inbound' || data.report_type === 'outbound') {
+            thead.innerHTML = `
+                <tr>
+                    <th>Code</th>
+                    <th>Material Name</th>
+                    <th class="text-end">Weight (kg)</th>
+                    <th class="text-end">Avg Price/kg (R)</th>
+                    <th class="text-end">Total Amount (R)</th>
+                    <th class="text-center">Transactions</th>
+                </tr>
+            `;
+            for (const item of items) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><code>${item.code || '-'}</code></td>
+                        <td>${item.name || '-'}</td>
+                        <td class="text-end">${(item.total_weight || 0).toFixed(2)}</td>
+                        <td class="text-end">R ${(item.avg_price || 0).toFixed(2)}</td>
+                        <td class="text-end">R ${(item.total_amount || 0).toFixed(2)}</td>
+                        <td class="text-center">${item.transaction_count || 0}</td>
+                    </tr>
+                `;
+            }
+        } else if (data.report_type === 'seller') {
+            thead.innerHTML = `
+                <tr>
+                    <th>Seller Name</th>
+                    <th>ID Number</th>
+                    <th class="text-end">Weight (kg)</th>
+                    <th class="text-end">Total Earned (R)</th>
+                    <th class="text-center">Transactions</th>
+                    <th>First Transaction</th>
+                    <th>Last Transaction</th>
+                </tr>
+            `;
+            for (const seller of items) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${seller.full_name || '-'}</td>
+                        <td>${seller.id_number || '-'}</td>
+                        <td class="text-end">${(seller.total_weight || 0).toFixed(2)}</td>
+                        <td class="text-end">R ${(seller.total_amount || 0).toFixed(2)}</td>
+                        <td class="text-center">${seller.transaction_count || 0}</td>
+                        <td>${seller.first_transaction || '-'}</td>
+                        <td>${seller.last_transaction || '-'}</td>
+                    </tr>
+                `;
+            }
+        }
+    }
+    
+    function exportToExcel() {
+        const table = document.getElementById('reportTable');
+        const rows = table.querySelectorAll('tr');
+        const csv = [];
+        
+        rows.forEach(row => {
+            const cols = row.querySelectorAll('th, td');
+            const rowData = Array.from(cols).map(col => col.innerText);
+            csv.push(rowData.join(','));
+        });
+        
+        const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report_${new Date().toISOString().slice(0,19)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
 {% endblock %}

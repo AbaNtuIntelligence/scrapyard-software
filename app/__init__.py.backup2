@@ -1,0 +1,605 @@
+﻿from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from datetime import datetime, timedelta
+import sqlite3
+import uuid
+import random
+import os
+
+# ============ CREATE APP INSTANCE FIRST ============
+app = Flask(__name__)
+app.secret_key = 'scrapyard-secret-key-2026'
+
+# ============ CONFIGURATION ============
+try:
+    from config import Config
+    app.config.from_object(Config)
+except ImportError:
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
+    app.config['SCALE_PORT'] = os.environ.get('SCALE_PORT', 'COM3')
+    app.config['SCALE_BAUDRATE'] = int(os.environ.get('SCALE_BAUDRATE', 9600))
+
+# ============ HELPER FUNCTIONS ============
+def get_mock_weight():
+    return round(random.uniform(0.5, 100.0), 2)
+
+def get_current_weight(scale_id='scale_1'):
+    return round(random.uniform(0.5, 100.0), 2)
+
+# ============ DATABASE FUNCTIONS ============
+def get_db():
+    if os.environ.get('RENDER'):
+        db_path = '/tmp/scrapyard.db'
+    else:
+        db_path = 'scrapyard.db'
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT UNIQUE NOT NULL,
+            inbound_price REAL,
+            outbound_price REAL,
+            description TEXT,
+            is_active BOOLEAN DEFAULT 1
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sellers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            id_number TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_number TEXT UNIQUE NOT NULL,
+            seller_id INTEGER NOT NULL,
+            material_id INTEGER NOT NULL,
+            material_code TEXT NOT NULL,
+            weight_kg REAL NOT NULL,
+            amount REAL NOT NULL,
+            scale_id TEXT,
+            direction TEXT,
+            reference_number TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (seller_id) REFERENCES sellers (id),
+            FOREIGN KEY (material_id) REFERENCES materials (id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scale_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scale_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            location TEXT,
+            capacity_kg INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            display_order INTEGER DEFAULT 0,
+            last_calibration DATE
+        )
+    ''')
+    
+    cursor.execute('SELECT COUNT(*) FROM scale_config')
+    if cursor.fetchone()[0] == 0:
+        scales = [
+            ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1),
+            ('scale_2', 'Secondary Scale', 'South Gate', 3000, 2),
+            ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 3),
+            ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 4)
+        ]
+        cursor.executemany('''
+            INSERT INTO scale_config (scale_id, name, location, capacity_kg, display_order)
+            VALUES (?, ?, ?, ?, ?)
+        ''', scales)
+    
+    cursor.execute('SELECT COUNT(*) FROM materials')
+    if cursor.fetchone()[0] == 0:
+        materials = [
+            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+            ('CU1', 'Copper', 120.00, 90.00, 'Clean copper wire'),
+        ]
+        cursor.executemany('''
+            INSERT INTO materials (code, name, inbound_price, outbound_price, description)
+            VALUES (?, ?, ?, ?, ?)
+        ''', materials)
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('✓ You have been logged out successfully.', 'info')
+    return redirect(url_for('login'))
+
+# Add at the top after imports
+from functools import wraps
+
+def admin_required(f):
+    """Decorator to require admin role"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('is_admin', False):
+            flash('✗ Admin access required for this operation.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def operator_required(f):
+    """Decorator to require operator role or higher"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_id'):
+            flash('✗ Please login to access this page.', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = ? AND password = ? AND is_active = 1', 
+                      (username, password))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            session['full_name'] = user['full_name']
+            session['is_admin'] = (user['role'] == 'admin')
+            
+            if session['is_admin']:
+                flash('✓ Welcome Administrator! You have full CRUD access.', 'success')
+            else:
+                flash('✓ Welcome Operator! You have view-only access.', 'success')
+            
+            return redirect(url_for('dashboard'))
+        else:
+            flash('✗ Invalid username or password.', 'danger')
+    
+    return render_template('login.html')
+# ============ AUTHENTICATION ROUTES ============
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = ? AND password = ? AND is_active = 1', (username, password))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            session['full_name'] = user['full_name']
+            session['is_admin'] = (user['role'] == 'admin')
+            
+            if user['role'] == 'admin':
+                flash(f'✓ Welcome Administrator {user["full_name"]}! You have full CRUD access.', 'success')
+            else:
+                flash(f'✓ Welcome {user["full_name"]}! You have limited access (view only).', 'success')
+            
+            return redirect(url_for('dashboard'))
+        else:
+            flash('✗ Invalid username or password. Please try again.', 'danger')
+            return redirect(url_for('login'))
+    
+    return render_template('login.html')
+
+# ============ MAIN ROUTES ============
+@app.route('/')
+def index():
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard')
+def dashboard():
+    conn = get_db()
+    cursor = conn.cursor()
+    today = datetime.now().date()
+    cursor.execute('''
+        SELECT t.*, s.full_name as seller_name, m.name as material_name
+        FROM transactions t
+        JOIN sellers s ON t.seller_id = s.id
+        JOIN materials m ON t.material_id = m.id
+        WHERE DATE(t.timestamp) = ?
+        ORDER BY t.timestamp DESC
+    ''', (today,))
+    rows = cursor.fetchall()
+    today_transactions = []
+    for row in rows:
+        trans = dict(row)
+        trans['time_display'] = trans.get('timestamp', '')[:16] if trans.get('timestamp') else ''
+        today_transactions.append(trans)
+    
+    cursor.execute('SELECT COALESCE(SUM(weight_kg), 0), COALESCE(SUM(amount), 0) FROM transactions WHERE DATE(timestamp) = ?', (today,))
+    totals = cursor.fetchone()
+    conn.close()
+    
+    return render_template('index.html', 
+                         today_transactions=today_transactions,
+                         today_weight=totals[0],
+                         today_amount=totals[1],
+                         active_page='dashboard')
+
+@app.route('/new_transaction', methods=['GET', 'POST'])
+def new_transaction():
+    conn = get_db()
+    cursor = conn.cursor()
+    if request.method == 'POST':
+        seller_name = request.form['seller_name']
+        id_number = request.form['id_number']
+        phone = request.form.get('phone', '')
+        material_id = request.form['material_id']
+        scale_id = request.form.get('scale_id', 'scale_1')
+        direction = request.form.get('direction', 'inbound')
+        weight = float(request.form['weight'])
+        
+        if direction == 'inbound':
+            cursor.execute('SELECT code, inbound_price as price FROM materials WHERE id = ?', (material_id,))
+        else:
+            cursor.execute('SELECT code, outbound_price as price FROM materials WHERE id = ?', (material_id,))
+        material = cursor.fetchone()
+        amount = weight * material['price']
+        
+        cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
+        seller = cursor.fetchone()
+        if seller:
+            seller_id = seller['id']
+        else:
+            cursor.execute('INSERT INTO sellers (full_name, id_number, phone) VALUES (?, ?, ?)',
+                         (seller_name, id_number, phone))
+            seller_id = cursor.lastrowid
+        
+        ticket_number = f"{direction[:3].upper()}{uuid.uuid4().hex[:5].upper()}"
+        cursor.execute('''
+            INSERT INTO transactions (ticket_number, seller_id, material_id, material_code, weight_kg, amount, scale_id, direction)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (ticket_number, seller_id, material_id, material['code'], weight, amount, scale_id, direction))
+        conn.commit()
+        conn.close()
+        flash(f'Transaction saved! Ticket: {ticket_number}', 'success')
+        return redirect(url_for('dashboard'))
+    
+    cursor.execute('SELECT id, code, name, inbound_price, outbound_price FROM materials WHERE is_active = 1 ORDER BY code')
+    materials = cursor.fetchall()
+    cursor.execute('SELECT * FROM scale_config WHERE is_active = 1 ORDER BY display_order')
+    db_scales = cursor.fetchall()
+    scales = {s['scale_id']: {'name': s['name'], 'location': s['location'], 'capacity_kg': s['capacity_kg']} for s in db_scales}
+    conn.close()
+    return render_template('new_transaction.html', materials=materials, scales=scales, active_page='new_transaction')
+
+# ============ PERMISSION DECORATORS ============
+from functools import wraps
+
+def admin_required(f):
+    """Decorator to require admin role for CRUD operations"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('is_admin', False):
+            return jsonify({'success': False, 'error': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+def login_required(f):
+    """Decorator to require login for viewing pages"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_id'):
+            flash('Please login to access this page.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+
+
+
+
+# ============ MAIN ROUTES (View-only for all logged-in users) ============
+@app.route('/reports')
+@login_required
+def reports():
+    return render_template('reports.html', active_page='reports')
+
+@app.route('/sellers')
+@login_required
+def sellers():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM sellers ORDER BY full_name')
+    sellers = cursor.fetchall()
+    conn.close()
+    return render_template('sellers.html', sellers=sellers, active_page='sellers')
+
+@app.route('/materials')
+@login_required
+def materials():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM materials WHERE is_active = 1 ORDER BY code')
+    materials = cursor.fetchall()
+    conn.close()
+    return render_template('materials.html', materials=materials, active_page='materials')
+
+@app.route('/scales')
+@login_required
+def scales_dashboard():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM scale_config ORDER BY display_order')
+    db_scales = cursor.fetchall()
+    scales = {s['scale_id']: dict(s) for s in db_scales}
+    conn.close()
+    return render_template('scales_dashboard.html', scales=scales, active_page='scales')
+
+# ============ API ROUTES ============
+@app.route('/api/get_weight')
+@login_required
+def api_get_weight():
+    scale_id = request.args.get('scale', 'scale_1')
+    return jsonify({'success': True, 'weight': get_mock_weight(), 'scale': scale_id})
+
+@app.route('/api/get_all_weights')
+@login_required
+def api_get_all_weights():
+    results = {f'scale_{i}': {'weight': get_mock_weight()} for i in range(1, 5)}
+    return jsonify({'success': True, 'scales': results})
+
+@app.route('/api/set_active_scale', methods=['POST'])
+@admin_required
+def api_set_active_scale():
+    data = request.json
+    scale_id = data.get('scale_id')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE scale_config SET is_active = 0')
+    cursor.execute('UPDATE scale_config SET is_active = 1 WHERE scale_id = ?', (scale_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+# ============ ADMIN-ONLY MATERIAL CRUD ROUTES ============
+@app.route('/api/materials', methods=['GET'])
+@login_required
+def api_get_materials():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM materials ORDER BY code')
+    materials = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(m) for m in materials])
+
+@app.route('/api/materials', methods=['POST'])
+@admin_required
+def api_create_material():
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (data['code'], data['name'], data['inbound_price'], data['outbound_price'], 
+              data.get('description', ''), data.get('is_active', 1)))
+        conn.commit()
+        return jsonify({'success': True, 'id': cursor.lastrowid})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Material code or name already exists'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/materials/<int:material_id>', methods=['PUT'])
+@admin_required
+def api_update_material(material_id):
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE materials 
+            SET code = ?, name = ?, inbound_price = ?, outbound_price = ?, 
+                description = ?, is_active = ?
+            WHERE id = ?
+        ''', (data['code'], data['name'], data['inbound_price'], data['outbound_price'],
+              data.get('description', ''), data.get('is_active', 1), material_id))
+        conn.commit()
+        return jsonify({'success': True})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Material code or name already exists'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/materials/<int:material_id>', methods=['DELETE'])
+@admin_required
+def api_delete_material(material_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM transactions WHERE material_id = ?', (material_id,))
+    count = cursor.fetchone()[0]
+    if count > 0:
+        cursor.execute('UPDATE materials SET is_active = 0 WHERE id = ?', (material_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'soft_delete': True, 'message': f'Material has {count} transactions, marked as inactive'})
+    else:
+        cursor.execute('DELETE FROM materials WHERE id = ?', (material_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'soft_delete': False})
+    
+    # ============ ADMIN-ONLY SCALE MANAGEMENT ROUTES ============
+@app.route('/api/scales', methods=['GET'])
+@login_required
+def api_get_scales():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM scale_config ORDER BY display_order')
+    scales = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(s) for s in scales])
+
+@app.route('/api/scales', methods=['POST'])
+@admin_required
+def api_add_scale():
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM scale_config')
+    count = cursor.fetchone()[0]
+    scale_id = f'scale_{count + 1}'
+    cursor.execute('''
+        INSERT INTO scale_config (scale_id, name, location, capacity_kg, port)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (scale_id, data['name'], data['location'], data['capacity_kg'], data.get('port', '')))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'scale_id': scale_id})
+
+@app.route('/api/scales/<int:scale_id>', methods=['DELETE'])
+@admin_required
+def api_delete_scale(scale_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM scale_config WHERE id = ?', (scale_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+# ============ REPORT FUNCTIONS ============
+def calculate_start_date(date_range, end_date):
+    if date_range == 'today':
+        return end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'yesterday':
+        return (end_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'week':
+        return end_date - timedelta(days=end_date.weekday())
+    elif date_range == 'month':
+        return end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'quarter':
+        quarter_month = ((end_date.month - 1) // 3) * 3 + 1
+        return end_date.replace(month=quarter_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'year':
+        return end_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return end_date - timedelta(days=30)
+
+def generate_inbound_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT m.code, m.name, 
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount,
+               COUNT(t.id) as transaction_count,
+               CASE WHEN SUM(t.weight_kg) > 0 THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2) ELSE 0 END as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.direction = 'inbound'
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY m.id, m.code, m.name
+        ORDER BY total_weight DESC
+    ''', (start_date, end_date))
+    items = [dict(row) for row in cursor.fetchall()]
+    total_weight = sum(i['total_weight'] for i in items)
+    total_amount = sum(i['total_amount'] for i in items)
+    return {
+        'items': items, 'total_weight': total_weight, 'total_amount': total_amount,
+        'transaction_count': sum(i['transaction_count'] for i in items),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_seller_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT s.full_name, s.id_number,
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount,
+               COUNT(t.id) as transaction_count,
+               MIN(t.timestamp) as first_transaction,
+               MAX(t.timestamp) as last_transaction
+        FROM sellers s
+        LEFT JOIN transactions t ON s.id = t.seller_id 
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY s.id, s.full_name, s.id_number
+        ORDER BY total_amount DESC
+    ''', (start_date, end_date))
+    sellers = [dict(row) for row in cursor.fetchall()]
+    total_weight = sum(s['total_weight'] for s in sellers)
+    total_amount = sum(s['total_amount'] for s in sellers)
+    return {
+        'sellers': sellers, 'total_weight': total_weight, 'total_amount': total_amount,
+        'transaction_count': sum(s['transaction_count'] for s in sellers),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+# ============ REPORT ROUTES ============
+@app.route('/api/reports/generate', methods=['GET'])
+@login_required
+def api_generate_report():
+    report_type = request.args.get('report_type', 'inbound')
+    date_range = request.args.get('date_range', 'month')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str = request.args.get('end_date', '')
+    
+    # Admin check for outbound reports
+    if report_type == 'outbound' and not session.get('is_admin', False):
+        return jsonify({'success': False, 'error': 'Admin access required for outbound reports'}), 403
+    
+    # Rest of your report generation code...
+    # (Keep your existing report generation logic)
+    
+    end_date = datetime.now()
+    start_date = calculate_start_date(date_range, end_date)
+    
+    if date_range == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if report_type == 'inbound':
+        result = generate_inbound_report(cursor, start_date, end_date)
+    elif report_type == 'seller':
+        result = generate_seller_report(cursor, start_date, end_date)
+    else:
+        result = {'items': [], 'total_weight': 0, 'total_amount': 0, 'transaction_count': 0, 'avg_price': 0}
+    
+    conn.close()
+    result.update({
+        'success': True,
+        'report_type': report_type,
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}'
+    })
+    return jsonify(result)
+
+# ============ RUN APP ============
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=10000)

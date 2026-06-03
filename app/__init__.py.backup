@@ -1,18 +1,37 @@
 ﻿from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from config import Config
 from datetime import datetime, timedelta
 import sqlite3
-import json
 import uuid
 import random
+import os
 
+# ============ CREATE APP INSTANCE FIRST ============
 app = Flask(__name__)
-app.config.from_object(Config)
 app.secret_key = 'scrapyard-secret-key-2026'
 
-# Database setup
+# ============ CONFIGURATION ============
+try:
+    from config import Config
+    app.config.from_object(Config)
+except ImportError:
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'scrapyard-secret-key-2026')
+    app.config['SCALE_PORT'] = os.environ.get('SCALE_PORT', 'COM3')
+    app.config['SCALE_BAUDRATE'] = int(os.environ.get('SCALE_BAUDRATE', 9600))
+
+# ============ HELPER FUNCTIONS ============
+def get_mock_weight():
+    return round(random.uniform(0.5, 100.0), 2)
+
+def get_current_weight(scale_id='scale_1'):
+    return round(random.uniform(0.5, 100.0), 2)
+
+# ============ DATABASE FUNCTIONS ============
 def get_db():
-    conn = sqlite3.connect('scrapyard.db')
+    if os.environ.get('RENDER'):
+        db_path = '/tmp/scrapyard.db'
+    else:
+        db_path = 'scrapyard.db'
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -20,12 +39,15 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Create tables
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
             name TEXT UNIQUE NOT NULL,
-            price_per_kg REAL NOT NULL
+            inbound_price REAL,
+            outbound_price REAL,
+            description TEXT,
+            is_active BOOLEAN DEFAULT 1
         )
     ''')
     
@@ -45,209 +67,533 @@ def init_db():
             ticket_number TEXT UNIQUE NOT NULL,
             seller_id INTEGER NOT NULL,
             material_id INTEGER NOT NULL,
+            material_code TEXT NOT NULL,
             weight_kg REAL NOT NULL,
             amount REAL NOT NULL,
+            scale_id TEXT,
+            direction TEXT,
+            reference_number TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (seller_id) REFERENCES sellers (id),
             FOREIGN KEY (material_id) REFERENCES materials (id)
         )
     ''')
     
-    # Insert sample materials if none exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scale_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scale_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            location TEXT,
+            capacity_kg INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            display_order INTEGER DEFAULT 0,
+            last_calibration DATE
+        )
+    ''')
+    
+    cursor.execute('SELECT COUNT(*) FROM scale_config')
+    if cursor.fetchone()[0] == 0:
+        scales = [
+            ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1),
+            ('scale_2', 'Secondary Scale', 'South Gate', 3000, 2),
+            ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 3),
+            ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 4)
+        ]
+        cursor.executemany('''
+            INSERT INTO scale_config (scale_id, name, location, capacity_kg, display_order)
+            VALUES (?, ?, ?, ?, ?)
+        ''', scales)
+    
     cursor.execute('SELECT COUNT(*) FROM materials')
     if cursor.fetchone()[0] == 0:
         materials = [
-            ('Cardboard', 1.50),
-            ('Mixed Paper', 0.80),
-            ('Aluminium Cans', 12.00),
-            ('Steel/Tin Cans', 2.20),
-            ('Plastic (PET)', 4.50),
-            ('Glass', 0.60)
+            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+            ('CU1', 'Copper', 120.00, 90.00, 'Clean copper wire'),
         ]
-        cursor.executemany('INSERT INTO materials (name, price_per_kg) VALUES (?, ?)', materials)
+        cursor.executemany('''
+            INSERT INTO materials (code, name, inbound_price, outbound_price, description)
+            VALUES (?, ?, ?, ?, ?)
+        ''', materials)
     
     conn.commit()
     conn.close()
 
-# Initialize database on startup
 init_db()
 
-# Scale reading function (mock for now - replace with actual serial)
-def get_current_weight():
-    # For testing, return a random weight
-    # Replace this with actual serial port reading
-    return round(random.uniform(0.5, 50.0), 2)
 
-@app.route('/')
-def index():
-    return redirect(url_for('dashboard'))
 
-@app.route('/dashboard')
-def dashboard():
+
+
+
+
+@app.route('/api/reports/generate', methods=['GET'])
+def api_generate_report():
+    """Generate various reports based on parameters"""
+    report_type = request.args.get('report_type', 'inbound')
+    date_range = request.args.get('date_range', 'month')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str = request.args.get('end_date', '')
+    
+    # Check permission for outbound reports
+    if report_type == 'outbound' and not session.get('is_admin', False):
+        return jsonify({'success': False, 'error': 'Admin access required for outbound reports'}), 403
+    
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = calculate_start_date(date_range, end_date)
+    
+    if date_range == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            # Set end_date to end of day
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+    
     conn = get_db()
     cursor = conn.cursor()
     
-    # Get today's transactions
-    today = datetime.now().date()
-    cursor.execute('''
-        SELECT t.*, s.full_name as seller_name, s.id_number as seller_id_number, m.name as material_name
-        FROM transactions t
-        JOIN sellers s ON t.seller_id = s.id
-        JOIN materials m ON t.material_id = m.id
-        WHERE DATE(t.timestamp) = ?
-        ORDER BY t.timestamp DESC
-    ''', (today,))
-    rows = cursor.fetchall()
-    
-    # Convert to list of dicts and format time
-    today_transactions = []
-    for row in rows:
-        trans = dict(row)
-        # Extract time from timestamp string
-        if trans.get('timestamp'):
-            # SQLite returns timestamp as string like "2026-06-01 14:30:00"
-            time_str = trans['timestamp'][11:16] if len(trans['timestamp']) > 16 else trans['timestamp']
-            trans['time_display'] = time_str
-        else:
-            trans['time_display'] = ''
-        today_transactions.append(trans)
-    
-    # Calculate today's totals
-    cursor.execute('''
-        SELECT COALESCE(SUM(weight_kg), 0) as total_weight, COALESCE(SUM(amount), 0) as total_amount
-        FROM transactions
-        WHERE DATE(timestamp) = ?
-    ''', (today,))
-    totals = cursor.fetchone()
-    
-    conn.close()
-    
-    return render_template('index.html', 
-                         today_transactions=today_transactions,
-                         today_weight=totals['total_weight'],
-                         today_amount=totals['total_amount'],
-                         active_page='dashboard')
-
-@app.route('/new_transaction', methods=['GET', 'POST'])
-def new_transaction():
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    if request.method == 'POST':
-        seller_name = request.form['seller_name']
-        id_number = request.form['id_number']
-        phone = request.form.get('phone', '')
-        material_id = request.form['material_id']
-        weight = float(request.form['weight'])
-        
-        # Get material price
-        cursor.execute('SELECT price_per_kg FROM materials WHERE id = ?', (material_id,))
-        material = cursor.fetchone()
-        amount = weight * material['price_per_kg']
-        
-        # Create or get seller
-        cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
-        seller = cursor.fetchone()
-        
-        if seller:
-            seller_id = seller['id']
-        else:
-            cursor.execute('INSERT INTO sellers (full_name, id_number, phone) VALUES (?, ?, ?)',
-                         (seller_name, id_number, phone))
-            seller_id = cursor.lastrowid
-        
-        # Create transaction
-        ticket_number = str(uuid.uuid4())[:8].upper()
-        cursor.execute('''
-            INSERT INTO transactions (ticket_number, seller_id, material_id, weight_kg, amount)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (ticket_number, seller_id, material_id, weight, amount))
-        
-        conn.commit()
-        conn.close()
-        
-        flash(f'Transaction saved! Ticket: {ticket_number}', 'success')
-        return redirect(url_for('dashboard'))
-    
-    # GET request - show form
-    cursor.execute('SELECT id, name, price_per_kg FROM materials ORDER BY name')
-    materials = cursor.fetchall()
-    conn.close()
-    
-    return render_template('new_transaction.html', materials=materials, active_page='new_transaction')
-
-@app.route('/reports')
-def reports():
-    period = request.args.get('period', 'daily')
-    now = datetime.now()
-    
-    if period == 'daily':
-        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'weekly':
-        start_date = now - timedelta(days=now.weekday())
-        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'monthly':
-        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    elif period == 'yearly':
-        start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    if report_type == 'inbound':
+        result = generate_inbound_report(cursor, start_date, end_date)
+    elif report_type == 'outbound':
+        result = generate_outbound_report(cursor, start_date, end_date)
+    elif report_type == 'inventory':
+        result = generate_inventory_report(cursor, start_date, end_date)
+    elif report_type == 'seller':
+        result = generate_seller_report(cursor, start_date, end_date)
+    elif report_type == 'scale':
+        result = generate_scale_report(cursor, start_date, end_date)
+    elif report_type == 'comparison':
+        result = generate_comparison_report(cursor, start_date, end_date)
     else:
-        start_date = now - timedelta(days=1)
+        return jsonify({'success': False, 'error': 'Invalid report type'}), 400
     
-    conn = get_db()
-    cursor = conn.cursor()
-    
+    conn.close()
+    return jsonify(result)
+
+def calculate_start_date(date_range, end_date):
+    """Calculate start date based on range type"""
+    if date_range == 'today':
+        return end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'yesterday':
+        return (end_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'week':
+        # Start of current week (Monday)
+        start = end_date - timedelta(days=end_date.weekday())
+        return start.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'month':
+        return end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'quarter':
+        quarter_month = ((end_date.month - 1) // 3) * 3 + 1
+        return end_date.replace(month=quarter_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'year':
+        return end_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return end_date - timedelta(days=30)
+
+def generate_inbound_report(cursor, start_date, end_date):
+    """Generate inbound (purchase) report"""
     cursor.execute('''
-        SELECT m.name, COALESCE(SUM(t.weight_kg), 0) as weight, COALESCE(SUM(t.amount), 0) as amount
+        SELECT 
+            m.code, 
+            m.name, 
+            COALESCE(SUM(t.weight_kg), 0) as total_weight,
+            COALESCE(SUM(t.amount), 0) as total_amount,
+            COUNT(t.id) as transaction_count,
+            CASE 
+                WHEN SUM(t.weight_kg) > 0 
+                THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2)
+                ELSE 0 
+            END as avg_price
         FROM materials m
-        LEFT JOIN transactions t ON m.id = t.material_id AND t.timestamp >= ?
-        GROUP BY m.id, m.name
-        ORDER BY m.name
-    ''', (start_date,))
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.direction = 'inbound'
+            AND t.timestamp BETWEEN ? AND ?
+        GROUP BY m.id, m.code, m.name
+        HAVING total_weight > 0 OR total_amount > 0
+        ORDER BY total_weight DESC
+    ''', (start_date, end_date))
     
-    summary = cursor.fetchall()
+    items = [dict(row) for row in cursor.fetchall()]
     
-    cursor.execute('SELECT COALESCE(SUM(weight_kg), 0) as total_weight, COALESCE(SUM(amount), 0) as total_amount FROM transactions WHERE timestamp >= ?', (start_date,))
-    totals = cursor.fetchone()
+    total_weight = sum(i['total_weight'] for i in items)
+    total_amount = sum(i['total_amount'] for i in items)
     
-    conn.close()
-    
-    return render_template('reports.html', 
-                         summary=summary,
-                         total_weight=totals['total_weight'],
-                         total_amount=totals['total_amount'],
-                         period=period,
-                         active_page='reports')
+    return {
+        'success': True,
+        'report_type': 'inbound',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'items': items,
+        'total_weight': total_weight,
+        'total_amount': total_amount,
+        'transaction_count': sum(i['transaction_count'] for i in items),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
 
-@app.route('/sellers')
-def sellers():
+def generate_outbound_report(cursor, start_date, end_date):
+    """Generate outbound (sale) report"""
+    cursor.execute('''
+        SELECT 
+            m.code, 
+            m.name, 
+            COALESCE(SUM(t.weight_kg), 0) as total_weight,
+            COALESCE(SUM(t.amount), 0) as total_amount,
+            COUNT(t.id) as transaction_count,
+            CASE 
+                WHEN SUM(t.weight_kg) > 0 
+                THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2)
+                ELSE 0 
+            END as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.direction = 'outbound'
+            AND t.timestamp BETWEEN ? AND ?
+        GROUP BY m.id, m.code, m.name
+        HAVING total_weight > 0 OR total_amount > 0
+        ORDER BY total_weight DESC
+    ''', (start_date, end_date))
+    
+    items = [dict(row) for row in cursor.fetchall()]
+    
+    total_weight = sum(i['total_weight'] for i in items)
+    total_amount = sum(i['total_amount'] for i in items)
+    
+    return {
+        'success': True,
+        'report_type': 'outbound',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'items': items,
+        'total_weight': total_weight,
+        'total_amount': total_amount,
+        'transaction_count': sum(i['transaction_count'] for i in items),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_seller_report(cursor, start_date, end_date):
+    """Generate seller performance report"""
+    cursor.execute('''
+        SELECT 
+            s.full_name, 
+            s.id_number,
+            s.phone,
+            COALESCE(SUM(t.weight_kg), 0) as total_weight,
+            COALESCE(SUM(t.amount), 0) as total_amount,
+            COUNT(t.id) as transaction_count,
+            MIN(t.timestamp) as first_transaction,
+            MAX(t.timestamp) as last_transaction
+        FROM sellers s
+        LEFT JOIN transactions t ON s.id = t.seller_id 
+            AND t.timestamp BETWEEN ? AND ?
+        GROUP BY s.id, s.full_name, s.id_number, s.phone
+        HAVING total_weight > 0 OR total_amount > 0
+        ORDER BY total_amount DESC
+    ''', (start_date, end_date))
+    
+    sellers = []
+    for row in cursor.fetchall():
+        seller = dict(row)
+        seller['first_transaction'] = seller['first_transaction'][:10] if seller['first_transaction'] else '-'
+        seller['last_transaction'] = seller['last_transaction'][:10] if seller['last_transaction'] else '-'
+        sellers.append(seller)
+    
+    total_weight = sum(s['total_weight'] for s in sellers)
+    total_amount = sum(s['total_amount'] for s in sellers)
+    
+    return {
+        'success': True,
+        'report_type': 'seller',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'sellers': sellers,
+        'total_weight': total_weight,
+        'total_amount': total_amount,
+        'transaction_count': sum(s['transaction_count'] for s in sellers),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_scale_report(cursor, start_date, end_date):
+    """Generate scale usage report"""
+    cursor.execute('''
+        SELECT 
+            sc.name, 
+            sc.location,
+            COUNT(t.id) as transaction_count,
+            COALESCE(SUM(t.weight_kg), 0) as total_weight,
+            COALESCE(SUM(t.amount), 0) as total_amount
+        FROM scale_config sc
+        LEFT JOIN transactions t ON sc.scale_id = t.scale_id 
+            AND t.timestamp BETWEEN ? AND ?
+        GROUP BY sc.scale_id, sc.name, sc.location
+        ORDER BY transaction_count DESC
+    ''', (start_date, end_date))
+    
+    scales = [dict(row) for row in cursor.fetchall()]
+    
+    return {
+        'success': True,
+        'report_type': 'scale',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'scales': scales
+    }
+
+def generate_inventory_report(cursor, start_date, end_date):
+    """Generate inventory valuation report"""
+    cursor.execute('''
+        SELECT 
+            m.code, 
+            m.name,
+            COALESCE(SUM(CASE WHEN t.direction = 'inbound' THEN t.weight_kg ELSE 0 END), 0) as inbound_total,
+            COALESCE(SUM(CASE WHEN t.direction = 'outbound' THEN t.weight_kg ELSE 0 END), 0) as outbound_total,
+            COALESCE(MAX(CASE WHEN t.direction = 'inbound' THEN t.amount / t.weight_kg ELSE NULL END), 0) as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.timestamp BETWEEN ? AND ?
+        GROUP BY m.id, m.code, m.name
+    ''', (start_date, end_date))
+    
+    inventory = []
+    for row in cursor.fetchall():
+        item = dict(row)
+        net_change = item['inbound_total'] - item['outbound_total']
+        current_value = net_change * item['avg_price'] if net_change > 0 else 0
+        item['net_change'] = net_change
+        item['current_value'] = current_value
+        inventory.append(item)
+    
+    return {
+        'success': True,
+        'report_type': 'inventory',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'inventory': inventory
+    }
+
+def generate_comparison_report(cursor, start_date, end_date):
+    """Generate period comparison report"""
+    # Calculate previous period of same length
+    period_length = (end_date - start_date).days
+    previous_end = start_date - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=period_length)
+    
+    def get_period_stats(cursor, s_date, e_date, direction='inbound'):
+        cursor.execute('''
+            SELECT 
+                COALESCE(SUM(weight_kg), 0) as total_weight,
+                COALESCE(SUM(amount), 0) as total_amount,
+                COUNT(id) as transaction_count
+            FROM transactions
+            WHERE direction = ?
+                AND timestamp BETWEEN ? AND ?
+        ''', (direction, s_date, e_date))
+        stats = cursor.fetchone()
+        return dict(stats)
+    
+    current = get_period_stats(cursor, start_date, end_date, 'inbound')
+    previous = get_period_stats(cursor, previous_start, previous_end, 'inbound')
+    
+    # Calculate average price
+    current['avg_price'] = current['total_amount'] / current['total_weight'] if current['total_weight'] > 0 else 0
+    previous['avg_price'] = previous['total_amount'] / previous['total_weight'] if previous['total_weight'] > 0 else 0
+    
+    return {
+        'success': True,
+        'report_type': 'comparison',
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+        'current': current,
+        'previous': previous
+    }
+# ============ REPORT FUNCTIONS ============
+def calculate_start_date(date_range, end_date):
+    if date_range == 'today':
+        return end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'yesterday':
+        return (end_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'week':
+        return end_date - timedelta(days=end_date.weekday())
+    elif date_range == 'month':
+        return end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'quarter':
+        quarter_month = ((end_date.month - 1) // 3) * 3 + 1
+        return end_date.replace(month=quarter_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif date_range == 'year':
+        return end_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return end_date - timedelta(days=30)
+
+def generate_inbound_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT m.code, m.name, 
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount,
+               COUNT(t.id) as transaction_count,
+               CASE WHEN SUM(t.weight_kg) > 0 THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2) ELSE 0 END as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.direction = 'inbound'
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY m.id, m.code, m.name
+        ORDER BY total_weight DESC
+    ''', (start_date, end_date))
+    items = [dict(row) for row in cursor.fetchall()]
+    total_weight = sum(i['total_weight'] for i in items)
+    total_amount = sum(i['total_amount'] for i in items)
+    return {
+        'items': items, 'total_weight': total_weight, 'total_amount': total_amount,
+        'transaction_count': sum(i['transaction_count'] for i in items),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_outbound_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT m.code, m.name, 
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount,
+               COUNT(t.id) as transaction_count,
+               CASE WHEN SUM(t.weight_kg) > 0 THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2) ELSE 0 END as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND t.direction = 'outbound'
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY m.id, m.code, m.name
+        ORDER BY total_weight DESC
+    ''', (start_date, end_date))
+    items = [dict(row) for row in cursor.fetchall()]
+    total_weight = sum(i['total_weight'] for i in items)
+    total_amount = sum(i['total_amount'] for i in items)
+    return {
+        'items': items, 'total_weight': total_weight, 'total_amount': total_amount,
+        'transaction_count': sum(i['transaction_count'] for i in items),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_seller_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT s.full_name, s.id_number, s.phone,
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount,
+               COUNT(t.id) as transaction_count,
+               MIN(t.timestamp) as first_transaction,
+               MAX(t.timestamp) as last_transaction
+        FROM sellers s
+        LEFT JOIN transactions t ON s.id = t.seller_id 
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY s.id, s.full_name, s.id_number, s.phone
+        ORDER BY total_amount DESC
+    ''', (start_date, end_date))
+    sellers = []
+    for row in cursor.fetchall():
+        seller = dict(row)
+        seller['first_transaction'] = seller['first_transaction'][:10] if seller['first_transaction'] else '-'
+        seller['last_transaction'] = seller['last_transaction'][:10] if seller['last_transaction'] else '-'
+        sellers.append(seller)
+    total_weight = sum(s['total_weight'] for s in sellers)
+    total_amount = sum(s['total_amount'] for s in sellers)
+    return {
+        'sellers': sellers, 'total_weight': total_weight, 'total_amount': total_amount,
+        'transaction_count': sum(s['transaction_count'] for s in sellers),
+        'avg_price': total_amount / total_weight if total_weight > 0 else 0
+    }
+
+def generate_scale_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT sc.name, sc.location,
+               COUNT(t.id) as transaction_count,
+               COALESCE(SUM(t.weight_kg), 0) as total_weight,
+               COALESCE(SUM(t.amount), 0) as total_amount
+        FROM scale_config sc
+        LEFT JOIN transactions t ON sc.scale_id = t.scale_id 
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY sc.scale_id, sc.name, sc.location
+        ORDER BY transaction_count DESC
+    ''', (start_date, end_date))
+    scales = [dict(row) for row in cursor.fetchall()]
+    return {'scales': scales}
+
+def generate_inventory_report(cursor, start_date, end_date):
+    cursor.execute('''
+        SELECT m.code, m.name,
+               COALESCE(SUM(CASE WHEN t.direction = 'inbound' THEN t.weight_kg ELSE 0 END), 0) as inbound_total,
+               COALESCE(SUM(CASE WHEN t.direction = 'outbound' THEN t.weight_kg ELSE 0 END), 0) as outbound_total,
+               COALESCE(AVG(CASE WHEN t.direction = 'inbound' THEN t.amount / t.weight_kg ELSE NULL END), 0) as avg_price
+        FROM materials m
+        LEFT JOIN transactions t ON m.id = t.material_id 
+            AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+        GROUP BY m.id, m.code, m.name
+    ''', (start_date, end_date))
+    inventory = []
+    for row in cursor.fetchall():
+        item = dict(row)
+        net_change = item['inbound_total'] - item['outbound_total']
+        item['net_change'] = net_change
+        item['current_value'] = net_change * item['avg_price'] if net_change > 0 else 0
+        inventory.append(item)
+    return {'inventory': inventory}
+
+def generate_comparison_report(cursor, start_date, end_date):
+    period_length = (end_date - start_date).days
+    previous_end = start_date - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=period_length)
+    
+    def get_stats(s_date, e_date):
+        cursor.execute('''
+            SELECT COALESCE(SUM(weight_kg), 0) as total_weight,
+                   COALESCE(SUM(amount), 0) as total_amount,
+                   COUNT(id) as transaction_count
+            FROM transactions
+            WHERE direction = 'inbound' AND DATE(timestamp) BETWEEN DATE(?) AND DATE(?)
+        ''', (s_date, e_date))
+        stats = cursor.fetchone()
+        return {
+            'total_weight': stats[0], 'total_amount': stats[1], 'transaction_count': stats[2],
+            'avg_price': stats[1] / stats[0] if stats[0] > 0 else 0
+        }
+    
+    return {'current': get_stats(start_date, end_date), 'previous': get_stats(previous_start, previous_end)}
+
+# ============ REPORT API ROUTE ============
+@app.route('/api/reports/generate', methods=['GET'])
+def api_generate_report():
+    report_type = request.args.get('report_type', 'inbound')
+    date_range = request.args.get('date_range', 'month')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str = request.args.get('end_date', '')
+    
+    if report_type == 'outbound' and not session.get('is_admin', False):
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    end_date = datetime.now()
+    start_date = calculate_start_date(date_range, end_date)
+    
+    if date_range == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+    
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('''
-        SELECT s.*,
-               COUNT(t.id) as transaction_count,
-               COALESCE(SUM(t.amount), 0) as total_earned,
-               MIN(t.timestamp) as first_transaction
-        FROM sellers s
-        LEFT JOIN transactions t ON s.id = t.seller_id
-        GROUP BY s.id
-        ORDER BY s.full_name
-    ''')
+    if report_type == 'inbound':
+        result = generate_inbound_report(cursor, start_date, end_date)
+    elif report_type == 'outbound':
+        result = generate_outbound_report(cursor, start_date, end_date)
+    elif report_type == 'seller':
+        result = generate_seller_report(cursor, start_date, end_date)
+    elif report_type == 'scale':
+        result = generate_scale_report(cursor, start_date, end_date)
+    elif report_type == 'inventory':
+        result = generate_inventory_report(cursor, start_date, end_date)
+    elif report_type == 'comparison':
+        result = generate_comparison_report(cursor, start_date, end_date)
+    else:
+        return jsonify({'success': False, 'error': 'Invalid report type'}), 400
     
-    sellers = cursor.fetchall()
     conn.close()
-    
-    return render_template('sellers.html', sellers=sellers, active_page='sellers')
-
-@app.route('/api/get_weight')
-def api_get_weight():
-    weight = get_current_weight()
-    return jsonify({'weight': weight})
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('dashboard'))
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    result.update({
+        'success': True,
+        'report_type': report_type,
+        'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}'
+    })
+    return jsonify(result)
