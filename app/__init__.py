@@ -102,28 +102,107 @@ def init_db():
         cursor.execute('INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)',
                       ('operator', 'operator123', 'operator', 'Yard Operator'))
 
-    # Auto-populate materials if none exist
-    cursor.execute('SELECT COUNT(*) FROM materials')
-    if cursor.fetchone()[0] == 0:
-        print('📦 No materials found. Adding default materials...')
-        materials = [
-            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
-            ('K5', 'Mixed Paper', 0.80, 0.40, 'Newspapers, magazines'),
-            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
-            ('CU1', 'Copper', 120.00, 90.00, 'Clean copper wire'),
-            ('BR1', 'Brass', 65.00, 45.00, 'Brass fittings'),
-            ('ST1', 'Steel', 2.20, 1.50, 'Steel scrap'),
-        ]
-        for m in materials:
+    # Delete all existing materials to start fresh
+    cursor.execute('DELETE FROM materials')
+    print('Cleared existing materials')
+
+    # Insert ALL materials
+    print('📦 Adding all materials...')
+    all_materials = [
+        # Paper Products (7)
+        ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+        ('K5', 'Mixed Paper', 0.80, 0.40, 'Newspapers, magazines'),
+        ('K6', 'White Office Paper', 1.20, 0.60, 'Clean white printer paper'),
+        ('K7', 'Shredded Paper', 0.60, 0.30, 'Shredded document paper'),
+        ('K8', 'Books', 0.50, 0.25, 'Paperback and hardcover books'),
+        ('K9', 'Newspapers', 0.70, 0.35, 'Clean newspapers only'),
+        ('K10', 'Kraft Paper', 1.10, 0.55, 'Brown kraft paper bags'),
+        
+        # Plastics (8)
+        ('PL1', 'PET Plastic', 4.50, 2.50, 'Clear plastic bottles'),
+        ('PL2', 'HDPE Natural', 5.00, 3.00, 'Natural HDPE jugs'),
+        ('PL3', 'HDPE Colored', 3.50, 2.00, 'Colored HDPE containers'),
+        ('PL4', 'PVC Rigid', 2.50, 1.20, 'PVC pipes and fittings'),
+        ('PL5', 'LDPE Film', 2.00, 1.00, 'Plastic bags, stretch film'),
+        ('PL6', 'PP Rigid', 3.00, 1.50, 'Hard plastic containers'),
+        ('PL7', 'Mixed Plastics', 2.00, 1.00, 'Mixed unsorted plastics'),
+        
+        # Glass (4)
+        ('GL1', 'Clear Glass', 0.60, 0.30, 'Clear glass bottles'),
+        ('GL2', 'Brown Glass', 0.50, 0.25, 'Brown/amber glass'),
+        ('GL3', 'Green Glass', 0.50, 0.25, 'Green glass bottles'),
+        ('GL4', 'Mixed Glass', 0.40, 0.20, 'Mixed color glass'),
+        
+        # Aluminium (6)
+        ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+        ('AL2', 'Aluminium Scrap', 18.00, 12.00, 'Mixed aluminium scrap'),
+        ('AL3', 'Aluminium Wheels', 22.00, 15.00, 'Clean aluminium wheels'),
+        ('AL4', 'Aluminium Extrusions', 20.00, 14.00, 'Window frames, doors'),
+        ('AL5', 'Aluminium Sheet', 19.00, 13.00, 'Aluminium sheet and plate'),
+        ('AL6', 'Aluminium Cast', 17.00, 11.00, 'Cast aluminium parts'),
+        
+        # Copper (5)
+        ('CU1', 'Copper Bright', 140.00, 110.00, 'Clean bright copper wire'),
+        ('CU2', 'Copper #1', 130.00, 100.00, 'Clean copper pipe'),
+        ('CU3', 'Copper Wire', 120.00, 90.00, 'Insulated copper wire'),
+        ('CU4', 'Copper Pipe', 135.00, 105.00, 'Clean copper plumbing pipe'),
+        ('CU5', 'Copper Sheet', 125.00, 95.00, 'Copper sheet and plate'),
+        
+        # Brass & Bronze (5)
+        ('BR1', 'Yellow Brass', 65.00, 45.00, 'Clean yellow brass fittings'),
+        ('BR2', 'Red Brass', 80.00, 55.00, 'Red brass plumbing fixtures'),
+        ('BR3', 'Bronze', 75.00, 52.00, 'Bronze statues, bearings'),
+        ('BR4', 'Brass Radiator', 55.00, 38.00, 'Brass/copper radiators'),
+        
+        # Steel & Iron (7)
+        ('ST1', 'Steel Cans', 2.20, 1.50, 'Food cans, tin containers'),
+        ('ST2', 'Stainless Steel', 15.00, 10.00, '304 stainless steel'),
+        ('ST3', 'Cast Iron', 3.50, 2.00, 'Cast iron pipes, engine blocks'),
+        ('ST4', 'Heavy Steel', 4.00, 2.50, 'Construction steel, beams'),
+        ('ST5', 'Light Iron', 2.00, 1.00, 'Light gauge steel'),
+        ('ST6', 'Sheet Metal', 3.00, 1.80, 'Mixed sheet metal scrap'),
+        
+        # Other Metals (5)
+        ('PB1', 'Lead', 22.00, 15.00, 'Lead sheeting, weights'),
+        ('PB2', 'Lead Batteries', 18.00, 12.00, 'Car batteries'),
+        ('ZN1', 'Zinc', 16.00, 10.00, 'Zinc scrap'),
+        ('NI1', 'Nickel', 50.00, 35.00, 'Nickel scrap'),
+        
+        # Electronics (6)
+        ('CB1', 'Circuit Boards', 45.00, 30.00, 'Green circuit boards'),
+        ('CB2', 'Motherboards', 120.00, 80.00, 'Computer motherboards'),
+        ('CB3', 'IC Chips', 500.00, 350.00, 'Computer processors'),
+        ('CB4', 'Hard Drives', 15.00, 8.00, 'Complete hard drives'),
+        ('CB5', 'Cell Phones', 50.00, 30.00, 'Complete cell phones'),
+        
+        # Batteries (3)
+        ('BT1', 'Li-Ion Batteries', 30.00, 20.00, 'Lithium-ion batteries'),
+        ('BT2', 'NiMH Batteries', 15.00, 8.00, 'Nickel metal hydride'),
+        
+        # Other (5)
+        ('TR1', 'Car Tires', 2.00, 1.00, 'Passenger car tires'),
+        ('EL1', 'Electric Motors', 12.00, 7.00, 'Copper wound motors'),
+        ('CAT1', 'Catalytic Converters', 250.00, 150.00, 'Catalytic converters'),
+    ]
+    
+    for m in all_materials:
+        try:
             cursor.execute('''
                 INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
                 VALUES (?, ?, ?, ?, ?, 1)
             ''', m)
-        print(f'✅ Added {len(materials)} default materials')
-
+            print(f'  ✓ Added: {m[0]} - {m[1]}')
+        except Exception as e:
+            print(f'  ✗ Error adding {m[0]}: {e}')
+    
     conn.commit()
+    
+    # Verify
+    cursor.execute('SELECT COUNT(*) FROM materials')
+    count = cursor.fetchone()[0]
+    print(f'✅ Total materials in database: {count}')
+    
     conn.close()
-
 init_db()
 
 # ============ HELPERS ============
