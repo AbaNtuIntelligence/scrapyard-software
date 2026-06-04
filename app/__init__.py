@@ -343,10 +343,60 @@ def sellers():
 @app.route('/new_transaction', methods=['GET', 'POST'])
 @login_required
 def new_transaction():
+    conn = get_db()
+    cursor = conn.cursor()
+    
     if request.method == 'POST':
-        flash('Transaction saved!', 'success')
+        # Handle transaction save
+        seller_name = request.form['seller_name']
+        id_number = request.form['id_number']
+        phone = request.form.get('phone', '')
+        material_id = request.form['material_id']
+        scale_id = request.form.get('scale_id', 'scale_1')
+        direction = request.form.get('direction', 'inbound')
+        weight = float(request.form['weight'])
+        
+        # Get material price
+        if direction == 'inbound':
+            cursor.execute('SELECT code, inbound_price as price FROM materials WHERE id = ?', (material_id,))
+        else:
+            cursor.execute('SELECT code, outbound_price as price FROM materials WHERE id = ?', (material_id,))
+        
+        material = cursor.fetchone()
+        amount = weight * material['price']
+        
+        # Create or get seller
+        cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
+        seller = cursor.fetchone()
+        
+        if seller:
+            seller_id = seller['id']
+        else:
+            cursor.execute('INSERT INTO sellers (full_name, id_number, phone) VALUES (?, ?, ?)',
+                         (seller_name, id_number, phone))
+            seller_id = cursor.lastrowid
+        
+        # Create transaction
+        ticket_number = f"{direction[:3].upper()}{uuid.uuid4().hex[:5].upper()}"
+        cursor.execute('''
+            INSERT INTO transactions (ticket_number, seller_id, material_id, material_code, weight_kg, amount, scale_id, direction)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (ticket_number, seller_id, material_id, material['code'], weight, amount, scale_id, direction))
+        
+        conn.commit()
+        conn.close()
+        
+        flash(f'✓ Transaction saved! Ticket: {ticket_number}', 'success')
         return redirect(url_for('dashboard'))
-    return render_template('new_transaction.html', active_page='new_transaction')
+    
+    # GET request - show form with all materials
+    cursor.execute('SELECT * FROM materials WHERE is_active = 1 ORDER BY code')
+    materials = cursor.fetchall()
+    conn.close()
+    
+    print(f"DEBUG: Found {len(materials)} materials for dropdown")  # Debug line
+    
+    return render_template('new_transaction.html', materials=materials, active_page='new_transaction')
 
 # ============ API ROUTES ============
 @app.route('/api/get_weight')

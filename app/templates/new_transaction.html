@@ -9,28 +9,40 @@
                     <h5 class="mb-0"><i class="fas fa-plus-circle"></i> New Transaction</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" id="txForm">
+                    <form method="POST" action="{{ url_for('new_transaction') }}">
+                        <!-- Transaction Type -->
                         <div class="mb-3">
-                            <label class="form-label">Transaction Type</label>
+                            <label class="form-label fw-bold">Transaction Type</label>
                             <div>
-                                <input type="radio" name="direction" id="inbound" value="inbound" checked> 
-                                <label for="inbound" class="me-3">📥 Inbound (Buying)</label>
-                                
-                                <input type="radio" name="direction" id="outbound" value="outbound"> 
-                                <label for="outbound">📤 Outbound (Selling)</label>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="direction" id="inbound" value="inbound" checked>
+                                    <label class="form-check-label" for="inbound">
+                                        <i class="fas fa-download text-success"></i> Inbound (Buying)
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="direction" id="outbound" value="outbound">
+                                    <label class="form-check-label" for="outbound">
+                                        <i class="fas fa-upload text-danger"></i> Outbound (Selling)
+                                    </label>
+                                </div>
                             </div>
                         </div>
-                        
+
+                        <!-- Scale Selection -->
                         <div class="mb-3">
-                            <label class="form-label">Select Scale</label>
-                            <select name="scale_id" id="scaleSelect" class="form-select">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-balance-scale"></i> Select Scale
+                            </label>
+                            <select name="scale_id" class="form-select" required>
                                 <option value="scale_1">🏭 Scale 1 - Main Gate (5000kg)</option>
                                 <option value="scale_2">🚛 Scale 2 - South Gate (3000kg)</option>
-                                <option value="scale_3">⚙️ Scale 3 - Processing (1000kg)</option>
+                                <option value="scale_3">⚙️ Scale 3 - Processing Area (1000kg)</option>
                                 <option value="scale_4">🏗️ Scale 4 - Weighbridge (20000kg)</option>
                             </select>
                         </div>
-                        
+
+                        <!-- Seller Information -->
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Seller/Buyer Name *</label>
@@ -45,40 +57,50 @@
                                 <input type="tel" name="phone" class="form-control">
                             </div>
                         </div>
-                        
+
+                        <!-- Material Selection - ALL CODES HERE -->
                         <div class="mb-3">
-                            <label class="form-label">Material Type *</label>
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-cube"></i> Material Type *
+                            </label>
                             <select name="material_id" id="material_id" class="form-select" required>
                                 <option value="">-- Select Material --</option>
-                                {% for m in materials %}
-                                <option value="{{ m.id }}" 
-                                        data-code="{{ m.code }}"
-                                        data-inbound-price="{{ m.inbound_price }}"
-                                        data-outbound-price="{{ m.outbound_price }}">
-                                    [{{ m.code }}] {{ m.name }}
+                                {% for material in materials %}
+                                <option value="{{ material.id }}" 
+                                        data-code="{{ material.code }}"
+                                        data-inbound="{{ material.inbound_price }}"
+                                        data-outbound="{{ material.outbound_price }}">
+                                    [{{ material.code }}] {{ material.name }} - R{{ material.inbound_price }}/kg (Buy) / R{{ material.outbound_price }}/kg (Sell)
                                 </option>
                                 {% endfor %}
                             </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Weight (kg) *</label>
-                            <div class="input-group">
-                                <input type="number" step="0.01" name="weight" id="weight" class="form-control" required>
-                                <button type="button" id="readScaleBtn" class="btn btn-secondary">
-                                    <i class="fas fa-microchip"></i> Read Scale
-                                </button>
-                            </div>
-                            <div id="scaleMsg" class="small text-muted mt-1"></div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Calculated Amount</label>
-                            <input type="text" id="amount" class="form-control" readonly 
-                                   style="background:#e8f5e9; font-weight:bold; font-size:1.2rem;">
                             <div id="priceInfo" class="small text-muted mt-1"></div>
                         </div>
-                        
+
+                        <!-- Weight Input -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-weight-hanging"></i> Weight (kg) *
+                            </label>
+                            <div class="input-group">
+                                <input type="number" step="0.01" name="weight" id="weight" class="form-control" required>
+                                <button type="button" id="readScaleBtn" class="btn btn-outline-secondary">
+                                    <i class="fas fa-microchip"></i> Read from Scale
+                                </button>
+                            </div>
+                            <div id="scaleStatus" class="small text-muted mt-1"></div>
+                        </div>
+
+                        <!-- Calculated Amount -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-calculator"></i> Calculated Amount
+                            </label>
+                            <input type="text" id="calculatedAmount" class="form-control" readonly 
+                                   style="font-size: 1.2rem; font-weight: bold; background-color: #e8f5e9;">
+                        </div>
+
+                        <hr>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save"></i> Save Transaction
                         </button>
@@ -93,117 +115,118 @@
 </div>
 
 <script>
-    (function() {
-        // Get DOM elements
-        const weightInput = document.getElementById('weight');
-        const amountField = document.getElementById('amount');
-        const readBtn = document.getElementById('readScaleBtn');
-        const scaleMsg = document.getElementById('scaleMsg');
-        const materialSelect = document.getElementById('material_id');
-        const priceInfo = document.getElementById('priceInfo');
-        const inboundRadio = document.getElementById('inbound');
-        const outboundRadio = document.getElementById('outbound');
-        const scaleSelect = document.getElementById('scaleSelect');
+    // Get DOM elements
+    const materialSelect = document.getElementById('material_id');
+    const weightInput = document.getElementById('weight');
+    const calculatedAmount = document.getElementById('calculatedAmount');
+    const readBtn = document.getElementById('readScaleBtn');
+    const scaleStatus = document.getElementById('scaleStatus');
+    const priceInfo = document.getElementById('priceInfo');
+    const inboundRadio = document.getElementById('inbound');
+    const outboundRadio = document.getElementById('outbound');
+
+    // Function to get current price based on selection
+    function getCurrentPrice() {
+        const selectedOption = materialSelect.options[materialSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) return 0;
         
-        // Get current price based on selected direction and material
-        function getCurrentPrice() {
-            const selectedOption = materialSelect.options[materialSelect.selectedIndex];
-            if (!selectedOption || !selectedOption.value) return 0;
-            
-            const isInbound = inboundRadio.checked;
-            const priceAttr = isInbound ? 'data-inbound-price' : 'data-outbound-price';
-            const price = parseFloat(selectedOption.getAttribute(priceAttr));
-            return isNaN(price) ? 0 : price;
+        const isInbound = inboundRadio.checked;
+        const priceAttr = isInbound ? 'data-inbound' : 'data-outbound';
+        const price = parseFloat(selectedOption.getAttribute(priceAttr));
+        return isNaN(price) ? 0 : price;
+    }
+
+    // Function to get material code
+    function getMaterialCode() {
+        const selectedOption = materialSelect.options[materialSelect.selectedIndex];
+        return selectedOption ? selectedOption.getAttribute('data-code') : '';
+    }
+
+    // Update price info display
+    function updatePriceInfo() {
+        const price = getCurrentPrice();
+        const code = getMaterialCode();
+        const isInbound = inboundRadio.checked;
+        
+        if (price > 0 && code) {
+            priceInfo.innerHTML = `<span class="text-success">${code} @ R${price.toFixed(2)}/kg (${isInbound ? 'Buying Price' : 'Selling Price'})</span>`;
+        } else if (materialSelect.value) {
+            priceInfo.innerHTML = `<span class="text-danger">No ${isInbound ? 'inbound' : 'outbound'} price configured for this material</span>`;
+        } else {
+            priceInfo.innerHTML = '';
         }
+    }
+
+    // Calculate and display amount
+    function calculateAmount() {
+        const price = getCurrentPrice();
+        const weight = parseFloat(weightInput.value) || 0;
         
-        // Get material code
-        function getMaterialCode() {
-            const selectedOption = materialSelect.options[materialSelect.selectedIndex];
-            return selectedOption ? selectedOption.getAttribute('data-code') : '';
+        if (price > 0 && weight > 0) {
+            const total = price * weight;
+            calculatedAmount.value = 'R ' + total.toFixed(2);
+            calculatedAmount.style.backgroundColor = '#c8e6c9';
+        } else {
+            calculatedAmount.value = '';
+            calculatedAmount.style.backgroundColor = '#e8f5e9';
         }
+    }
+
+    // Read from scale API
+    async function readScale() {
+        const scaleSelect = document.querySelector('select[name="scale_id"]');
+        const scaleId = scaleSelect.value;
         
-        // Update price info display
-        function updatePriceInfo() {
-            const price = getCurrentPrice();
-            const code = getMaterialCode();
-            const isInbound = inboundRadio.checked;
+        readBtn.disabled = true;
+        readBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Reading...';
+        scaleStatus.innerHTML = '<span class="text-info">Connecting to scale...</span>';
+        
+        try {
+            const response = await fetch(`/api/get_weight?scale=${scaleId}&mock=true`);
+            const data = await response.json();
             
-            if (price > 0 && code) {
-                priceInfo.innerHTML = `<span class="text-success">${code} @ R${price.toFixed(2)}/kg (${isInbound ? 'Buying Price' : 'Selling Price'})</span>`;
-            } else if (materialSelect.value) {
-                priceInfo.innerHTML = `<span class="text-danger">No ${isInbound ? 'inbound' : 'outbound'} price configured for this material</span>`;
+            if (data.success && data.weight) {
+                weightInput.value = data.weight.toFixed(2);
+                scaleStatus.innerHTML = `<span class="text-success">✓ Weight read: ${data.weight} kg</span>`;
+                calculateAmount();
             } else {
-                priceInfo.innerHTML = '';
+                scaleStatus.innerHTML = `<span class="text-danger">✗ Failed to read scale: ${data.error || 'Unknown error'}</span>`;
             }
+        } catch (error) {
+            console.error('Scale error:', error);
+            scaleStatus.innerHTML = `<span class="text-danger">✗ Connection error: ${error.message}</span>`;
+        } finally {
+            readBtn.disabled = false;
+            readBtn.innerHTML = '<i class="fas fa-microchip"></i> Read from Scale';
+            setTimeout(() => {
+                if (scaleStatus.innerHTML) scaleStatus.innerHTML = '';
+            }, 3000);
         }
-        
-        // Calculate and display amount
-        function calculateAmount() {
-            const price = getCurrentPrice();
-            const weight = parseFloat(weightInput.value) || 0;
-            
-            if (price > 0 && weight > 0) {
-                const total = price * weight;
-                amountField.value = 'R ' + total.toFixed(2);
-                amountField.style.backgroundColor = '#c8e6c9';
-            } else {
-                amountField.value = '';
-                amountField.style.backgroundColor = '#e8f5e9';
-            }
-        }
-        
-        // Read from scale
-        async function readScale() {
-            const scaleId = scaleSelect.value;
-            const scaleName = scaleSelect.options[scaleSelect.selectedIndex].text.split(' - ')[0];
-            
-            readBtn.disabled = true;
-            readBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
-            scaleMsg.innerHTML = '<span class="text-info">Connecting to ' + scaleName + '...</span>';
-            
-            try {
-                const response = await fetch('/api/get_weight?scale=' + scaleId + '&mock=true');
-                const data = await response.json();
-                
-                if (data.success && data.weight) {
-                    weightInput.value = data.weight.toFixed(2);
-                    scaleMsg.innerHTML = '<span class="text-success">✓ Weight: ' + data.weight + ' kg from ' + scaleName + '</span>';
-                    calculateAmount();
-                } else {
-                    scaleMsg.innerHTML = '<span class="text-danger">✗ Failed to read scale: ' + (data.error || 'Unknown error') + '</span>';
-                }
-            } catch (error) {
-                console.error('Scale read error:', error);
-                scaleMsg.innerHTML = '<span class="text-danger">✗ Connection error: ' + error.message + '</span>';
-            } finally {
-                readBtn.disabled = false;
-                readBtn.innerHTML = '<i class="fas fa-microchip"></i> Read Scale';
-                setTimeout(() => {
-                    if (scaleMsg.innerHTML) scaleMsg.innerHTML = '';
-                }, 3000);
-            }
-        }
-        
-        // Event listeners
-        weightInput.addEventListener('input', calculateAmount);
-        materialSelect.addEventListener('change', function() {
-            updatePriceInfo();
-            calculateAmount();
-        });
-        inboundRadio.addEventListener('change', function() {
-            updatePriceInfo();
-            calculateAmount();
-        });
-        outboundRadio.addEventListener('change', function() {
-            updatePriceInfo();
-            calculateAmount();
-        });
-        readBtn.addEventListener('click', readScale);
-        
-        // Initialize
+    }
+
+    // Event listeners
+    materialSelect.addEventListener('change', () => {
         updatePriceInfo();
         calculateAmount();
-        console.log('✅ Scale reader ready - Material codes loaded');
-    })();
+    });
+    
+    weightInput.addEventListener('input', calculateAmount);
+    
+    inboundRadio.addEventListener('change', () => {
+        updatePriceInfo();
+        calculateAmount();
+    });
+    
+    outboundRadio.addEventListener('change', () => {
+        updatePriceInfo();
+        calculateAmount();
+    });
+    
+    readBtn.addEventListener('click', readScale);
+
+    // Initialize
+    updatePriceInfo();
+    calculateAmount();
+    console.log('✅ New Transaction page ready with all material codes');
 </script>
 {% endblock %}
