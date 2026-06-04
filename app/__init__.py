@@ -12,6 +12,19 @@ app.secret_key = 'scrapyard-secret-key-2026'
 
 
 
+
+@app.route('/api/get_all_weights')
+def api_get_all_weights():
+    """Get weights from all scales (mock data for now)"""
+    # Return mock data for 4 scales
+    scales = {
+        'scale_1': {'weight': round(random.uniform(0.5, 5000.0), 2)},
+        'scale_2': {'weight': round(random.uniform(0.5, 3000.0), 2)},
+        'scale_3': {'weight': round(random.uniform(0.5, 1000.0), 2)},
+        'scale_4': {'weight': round(random.uniform(0.5, 20000.0), 2)}
+    }
+    return jsonify({'success': True, 'scales': scales})
+
 @app.route('/api/get_all_weights')
 def api_get_all_weights():
     return jsonify({'success': True, 'scales': {}})
