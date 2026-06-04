@@ -1,0 +1,120 @@
+﻿import sqlite3
+import os
+
+# Use the EXACT database path your app is using
+db_path = 'app/scrapyard.db'
+
+print('=' * 60)
+print(f'Adding materials to: {db_path}')
+print('=' * 60)
+
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
+
+# Check current count before
+cursor.execute('SELECT COUNT(*) FROM materials')
+before_count = cursor.fetchone()[0]
+print(f'Materials before: {before_count}')
+
+# All materials to add (only new ones, avoid duplicates)
+materials = [
+    # Paper Products
+    ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+    ('K5', 'Mixed Paper', 0.80, 0.40, 'Newspapers, magazines, office paper'),
+    ('K6', 'White Office Paper', 1.20, 0.60, 'Clean white printer paper'),
+    ('K7', 'Shredded Paper', 0.60, 0.30, 'Shredded document paper'),
+    
+    # Metals - Aluminium
+    ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+    ('AL2', 'Aluminium Scrap', 18.00, 12.00, 'Mixed aluminium scrap'),
+    ('AL3', 'Aluminium Wheels', 22.00, 15.00, 'Clean aluminium wheels'),
+    
+    # Metals - Copper
+    ('CU1', 'Copper Bright', 140.00, 110.00, 'Clean bright copper wire'),
+    ('CU2', 'Copper #1', 130.00, 100.00, 'Clean copper pipe'),
+    ('CU3', 'Copper Wire', 120.00, 90.00, 'Insulated copper wire'),
+    
+    # Metals - Brass & Steel
+    ('BR1', 'Yellow Brass', 65.00, 45.00, 'Clean yellow brass fittings'),
+    ('ST1', 'Steel Cans', 2.20, 1.50, 'Food cans, tin containers'),
+    ('ST2', 'Stainless Steel', 15.00, 10.00, '304 stainless steel scrap'),
+    ('ST3', 'Cast Iron', 3.50, 2.00, 'Cast iron pipes, engine blocks'),
+    
+    # Other Metals
+    ('PB1', 'Lead', 22.00, 15.00, 'Lead sheeting, weights'),
+    ('ZN1', 'Zinc', 16.00, 10.00, 'Zinc scrap'),
+    
+    # Plastics
+    ('PL1', 'PET Plastic', 4.50, 2.50, 'Clear plastic bottles'),
+    ('PL2', 'HDPE Plastic', 3.80, 2.00, 'Milk bottles, detergent'),
+    ('PL3', 'PVC Plastic', 2.50, 1.20, 'PVC pipes and fittings'),
+    ('PL4', 'Mixed Plastics', 2.00, 1.00, 'Mixed unsorted plastics'),
+    
+    # Glass
+    ('GL1', 'Clear Glass', 0.60, 0.30, 'Clear glass bottles'),
+    ('GL2', 'Brown Glass', 0.50, 0.25, 'Brown/amber glass'),
+    ('GL3', 'Green Glass', 0.50, 0.25, 'Green glass bottles'),
+    
+    # Electronics
+    ('CB1', 'Circuit Boards', 45.00, 30.00, 'Green circuit boards'),
+    ('CB2', 'Motherboards', 120.00, 80.00, 'Computer motherboards'),
+    ('CB3', 'IC Chips', 500.00, 350.00, 'Computer processors'),
+    
+    # Batteries
+    ('BT1', 'Li-Ion Batteries', 30.00, 20.00, 'Lithium-ion batteries'),
+    ('BT2', 'Lead Batteries', 18.00, 12.00, 'Car batteries'),
+    
+    # Other
+    ('TR1', 'Car Tires', 2.00, 1.00, 'Passenger car tires'),
+    ('EL1', 'Electric Motors', 12.00, 7.00, 'Copper wound motors'),
+    ('CAT1', 'Catalytic Converters', 250.00, 150.00, 'Catalytic converters'),
+]
+
+added = 0
+skipped = 0
+
+for mat in materials:
+    try:
+        # Check if material already exists
+        cursor.execute('SELECT code FROM materials WHERE code = ?', (mat[0],))
+        exists = cursor.fetchone()
+        
+        if exists:
+            # Update existing
+            cursor.execute('''
+                UPDATE materials 
+                SET name = ?, inbound_price = ?, outbound_price = ?, description = ?, is_active = 1
+                WHERE code = ?
+            ''', (mat[1], mat[2], mat[3], mat[4], mat[0]))
+            print(f'✓ Updated: {mat[0]} - {mat[1]}')
+            added += 1
+        else:
+            # Insert new
+            cursor.execute('''
+                INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+            ''', mat)
+            print(f'✓ Added: {mat[0]} - {mat[1]}')
+            added += 1
+    except Exception as e:
+        print(f'✗ Error with {mat[0]}: {e}')
+        skipped += 1
+
+conn.commit()
+
+# Show final count
+cursor.execute('SELECT COUNT(*) FROM materials')
+after_count = cursor.fetchone()[0]
+print('=' * 60)
+print(f'✅ Materials added/updated: {added}')
+print(f'✅ Total materials in database: {after_count}')
+print('=' * 60)
+
+# Show all materials
+print('\n📋 All materials in database:')
+cursor.execute('SELECT code, name FROM materials ORDER BY code')
+for row in cursor.fetchall():
+    print(f'   {row[0]} - {row[1]}')
+
+conn.close()
+print('\n✅ Done! Restart Flask and refresh your Materials page.')
