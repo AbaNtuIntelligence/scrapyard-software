@@ -64,6 +64,7 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Materials table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +77,7 @@ def init_db():
         )
     ''')
     
+    # Sellers table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sellers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +88,7 @@ def init_db():
         )
     ''')
     
+    # Transactions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,6 +107,60 @@ def init_db():
         )
     ''')
     
+    # Scale config table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scale_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scale_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            location TEXT,
+            capacity_kg INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            display_order INTEGER DEFAULT 0,
+            last_calibration DATE
+        )
+    ''')
+    
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            full_name TEXT,
+            email TEXT,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Insert default scales
+    cursor.execute('SELECT COUNT(*) FROM scale_config')
+    if cursor.fetchone()[0] == 0:
+        scales = [
+            ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1),
+            ('scale_2', 'Secondary Scale', 'South Gate', 3000, 2),
+            ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 3),
+            ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 4)
+        ]
+        cursor.executemany('''
+            INSERT INTO scale_config (scale_id, name, location, capacity_kg, display_order)
+            VALUES (?, ?, ?, ?, ?)
+        ''', scales)
+    
+    # Insert default users
+    cursor.execute('SELECT COUNT(*) FROM users')
+    if cursor.fetchone()[0] == 0:
+        users = [
+            ('admin', 'admin123', 'admin', 'System Administrator', 'admin@scrapsoft.com'),
+            ('operator', 'operator123', 'operator', 'Yard Operator', 'operator@scrapsoft.com')
+        ]
+        cursor.executemany('''
+            INSERT INTO users (username, password, role, full_name, email)
+            VALUES (?, ?, ?, ?, ?)
+        ''', users)
+    
     # Auto-populate default materials if none exist
     cursor.execute('SELECT COUNT(*) FROM materials')
     if cursor.fetchone()[0] == 0:
@@ -114,8 +171,10 @@ def init_db():
             ('K6', 'White Office Paper', 1.20, 0.60, 'Clean white printer paper'),
             ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
             ('AL2', 'Aluminium Scrap', 18.00, 12.00, 'Mixed aluminium scrap'),
+            ('AL3', 'Aluminium Wheels', 22.00, 15.00, 'Clean aluminium wheels'),
             ('CU1', 'Copper Bright', 140.00, 110.00, 'Clean bright copper wire'),
             ('CU2', 'Copper #1', 130.00, 100.00, 'Clean copper pipe'),
+            ('CU3', 'Copper Wire', 120.00, 90.00, 'Insulated copper wire'),
             ('BR1', 'Yellow Brass', 65.00, 45.00, 'Clean yellow brass fittings'),
             ('ST1', 'Steel Cans', 2.20, 1.50, 'Food cans, tin containers'),
             ('ST2', 'Stainless Steel', 15.00, 10.00, '304 stainless steel'),
@@ -140,74 +199,9 @@ def init_db():
             except Exception as e:
                 print(f'  ✗ Error adding {m[0]}: {e}')
         print(f'✅ Added {len(default_materials)} default materials')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS scale_config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scale_id TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            location TEXT,
-            capacity_kg INTEGER,
-            is_active BOOLEAN DEFAULT 1,
-            display_order INTEGER DEFAULT 0,
-            last_calibration DATE
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL,
-            full_name TEXT,
-            email TEXT,
-            is_active BOOLEAN DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('SELECT COUNT(*) FROM scale_config')
-    if cursor.fetchone()[0] == 0:
-        scales = [
-            ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1),
-            ('scale_2', 'Secondary Scale', 'South Gate', 3000, 2),
-            ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 3),
-            ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 4)
-        ]
-        cursor.executemany('''
-            INSERT INTO scale_config (scale_id, name, location, capacity_kg, display_order)
-            VALUES (?, ?, ?, ?, ?)
-        ''', scales)
-    
-    cursor.execute('SELECT COUNT(*) FROM materials')
-    if cursor.fetchone()[0] == 0:
-        materials = [
-            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
-            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
-            ('CU1', 'Copper', 120.00, 90.00, 'Clean copper wire'),
-        ]
-        cursor.executemany('''
-            INSERT INTO materials (code, name, inbound_price, outbound_price, description)
-            VALUES (?, ?, ?, ?, ?)
-        ''', materials)
-    
-    cursor.execute('SELECT COUNT(*) FROM users')
-    if cursor.fetchone()[0] == 0:
-        users = [
-            ('admin', 'admin123', 'admin', 'System Administrator', 'admin@scrapsoft.com'),
-            ('operator', 'operator123', 'operator', 'Yard Operator', 'operator@scrapsoft.com')
-        ]
-        cursor.executemany('''
-            INSERT INTO users (username, password, role, full_name, email)
-            VALUES (?, ?, ?, ?, ?)
-        ''', users)
     
     conn.commit()
     conn.close()
-
-init_db()
-
 # ============ AUTHENTICATION ROUTES ============
 @app.route('/login', methods=['GET', 'POST'])
 def login():
