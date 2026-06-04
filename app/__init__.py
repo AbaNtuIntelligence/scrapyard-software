@@ -104,6 +104,43 @@ def init_db():
         )
     ''')
     
+    # Auto-populate default materials if none exist
+    cursor.execute('SELECT COUNT(*) FROM materials')
+    if cursor.fetchone()[0] == 0:
+        print('📦 No materials found. Adding default materials...')
+        default_materials = [
+            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+            ('K5', 'Mixed Paper', 0.80, 0.40, 'Newspapers, magazines'),
+            ('K6', 'White Office Paper', 1.20, 0.60, 'Clean white printer paper'),
+            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+            ('AL2', 'Aluminium Scrap', 18.00, 12.00, 'Mixed aluminium scrap'),
+            ('CU1', 'Copper Bright', 140.00, 110.00, 'Clean bright copper wire'),
+            ('CU2', 'Copper #1', 130.00, 100.00, 'Clean copper pipe'),
+            ('BR1', 'Yellow Brass', 65.00, 45.00, 'Clean yellow brass fittings'),
+            ('ST1', 'Steel Cans', 2.20, 1.50, 'Food cans, tin containers'),
+            ('ST2', 'Stainless Steel', 15.00, 10.00, '304 stainless steel'),
+            ('PL1', 'PET Plastic', 4.50, 2.50, 'Clear plastic bottles'),
+            ('PL2', 'HDPE Plastic', 3.80, 2.00, 'Milk bottles, detergent'),
+            ('GL1', 'Clear Glass', 0.60, 0.30, 'Clear glass bottles'),
+            ('GL2', 'Brown Glass', 0.50, 0.25, 'Brown/amber glass'),
+            ('PB1', 'Lead', 22.00, 15.00, 'Lead sheeting, weights'),
+            ('BT1', 'Li-Ion Batteries', 30.00, 20.00, 'Lithium-ion batteries'),
+            ('CB1', 'Circuit Boards', 45.00, 30.00, 'Green circuit boards'),
+            ('TR1', 'Car Tires', 2.00, 1.00, 'Passenger car tires'),
+            ('EL1', 'Electric Motors', 12.00, 7.00, 'Copper wound motors'),
+            ('CAT1', 'Catalytic Converters', 250.00, 150.00, 'Catalytic converters'),
+        ]
+        for m in default_materials:
+            try:
+                cursor.execute('''
+                    INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                ''', m)
+                print(f'  ✓ Added: {m[0]} - {m[1]}')
+            except Exception as e:
+                print(f'  ✗ Error adding {m[0]}: {e}')
+        print(f'✅ Added {len(default_materials)} default materials')
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scale_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -576,3 +613,40 @@ def api_delete_material(material_id):
     return jsonify({'success': True})
 
 print('✅ Materials API routes registered')
+    
+    # Auto-populate default materials if none exist
+    cursor.execute('SELECT COUNT(*) FROM materials')
+    if cursor.fetchone()[0] == 0:
+        print('📦 No materials found. Adding default materials...')
+        default_materials = [
+            ('K4', 'Cardboard', 1.50, 0.80, 'Corrugated cardboard boxes'),
+            ('K5', 'Mixed Paper', 0.80, 0.40, 'Newspapers, magazines, office paper'),
+            ('K6', 'White Office Paper', 1.20, 0.60, 'Clean white printer paper'),
+            ('AL1', 'Aluminium Cans', 25.00, 18.00, 'Clean aluminium beverage cans'),
+            ('AL2', 'Aluminium Scrap', 18.00, 12.00, 'Mixed aluminium scrap'),
+            ('CU1', 'Copper Bright', 140.00, 110.00, 'Clean bright copper wire'),
+            ('CU2', 'Copper #1', 130.00, 100.00, 'Clean copper pipe'),
+            ('BR1', 'Yellow Brass', 65.00, 45.00, 'Clean yellow brass fittings'),
+            ('ST1', 'Steel Cans', 2.20, 1.50, 'Food cans, tin containers'),
+            ('ST2', 'Stainless Steel', 15.00, 10.00, '304 stainless steel scrap'),
+            ('PL1', 'PET Plastic', 4.50, 2.50, 'Clear plastic bottles'),
+            ('PL2', 'HDPE Plastic', 3.80, 2.00, 'Milk bottles, detergent'),
+            ('GL1', 'Clear Glass', 0.60, 0.30, 'Clear glass bottles'),
+            ('GL2', 'Brown Glass', 0.50, 0.25, 'Brown/amber glass'),
+            ('PB1', 'Lead', 22.00, 15.00, 'Lead sheeting, weights'),
+            ('BT1', 'Li-Ion Batteries', 30.00, 20.00, 'Lithium-ion batteries'),
+            ('CB1', 'Circuit Boards', 45.00, 30.00, 'Green circuit boards'),
+            ('TR1', 'Car Tires', 2.00, 1.00, 'Passenger car tires'),
+            ('EL1', 'Electric Motors', 12.00, 7.00, 'Copper wound motors'),
+            ('CAT1', 'Catalytic Converters', 250.00, 150.00, 'Catalytic converters'),
+        ]
+        for m in default_materials:
+            try:
+                cursor.execute('''
+                    INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                ''', m)
+                print(f'  ✓ Added: {m[0]} - {m[1]}')
+            except Exception as e:
+                print(f'  ✗ Error adding {m[0]}: {e}')
+        print(f'✅ Added {len(default_materials)} default materials')
