@@ -1,59 +1,67 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card bg-primary text-white">
-            <div class="card-body">
-                <h5 class="card-title">Today's Total Weight</h5>
-                <h2 class="card-text">{{ "%.2f"|format(today_weight) }} kg</h2>
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5>Today's Total Weight</h5>
+                    <h2>{{ "%.2f"|format(today_weight) }} kg</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5>Today's Total Payment</h5>
+                    <h2>R {{ "%.2f"|format(today_amount) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h5>Today's Transactions</h5>
+                    <h2>{{ today_count }}</h2>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card bg-success text-white">
-            <div class="card-body">
-                <h5 class="card-title">Today's Total Payment</h5>
-                <h2 class="card-text">R {{ "%.2f"|format(today_amount) }}</h2>
-            </div>
-        </div>
-    </div>
-</div>
 
-<div class="card">
-    <div class="card-header">
-        <h5>Today's Transactions</h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Seller</th>
-                        <th>Material</th>
-                        <th>Weight (kg)</th>
-                        <th>Amount (R)</th>
-                        <th>Ticket</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for tx in today_transactions %}
-                    <tr>
-                        <td>{{ tx.time_display }}</td>
-                        <td>{{ tx.seller_name }}</td>
-                        <td>{{ tx.material_name }}</td>
-                        <td>{{ tx.weight_kg }}</td>
-                        <td>{{ tx.amount }}</td>
-                        <td>{{ tx.ticket_number }}</td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="6" class="text-center">No transactions today</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="card">
+        <div class="card-header">
+            <h5>Recent Transactions</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Seller</th>
+                            <th>Material</th>
+                            <th>Weight (kg)</th>
+                            <th>Amount (R)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in today_transactions %}
+                        <tr>
+                            <td>{{ tx.time_display }}</td>
+                            <td>{{ tx.seller_name or '-' }}</td>
+                            <td>{{ tx.material_name or '-' }}</td>
+                            <td>{{ tx.weight_kg }}</td>
+                            <td>{{ tx.amount }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center">No transactions today</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
