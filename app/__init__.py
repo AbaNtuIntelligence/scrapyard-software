@@ -10,6 +10,27 @@ import os
 app = Flask(__name__)
 app.secret_key = 'scrapyard-secret-key-2026'
 
+
+@app.route('/force-add-materials')
+def force_add_materials():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Clear existing
+    cursor.execute('DELETE FROM materials')
+    
+    # Add all materials (same list as above)
+    materials = [ ... ]  # Add your full list here
+    
+    for m in materials:
+        cursor.execute('INSERT INTO materials (code, name, inbound_price, outbound_price, description, is_active) VALUES (?, ?, ?, ?, ?, 1)', m)
+    
+    conn.commit()
+    count = cursor.execute('SELECT COUNT(*) FROM materials').fetchone()[0]
+    conn.close()
+    
+    return f'Added {count} materials!'
+
 # ============ DECORATORS ============
 def login_required(f):
     @wraps(f)
