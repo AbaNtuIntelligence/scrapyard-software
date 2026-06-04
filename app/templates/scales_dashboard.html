@@ -3,280 +3,111 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4><i class="fas fa-balance-scale"></i> Scale Management Dashboard</h4>
+        <h4><i class="fas fa-balance-scale"></i> Scale Management</h4>
+        {% if session.is_admin %}
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addScaleModal">
             <i class="fas fa-plus"></i> Add New Scale
         </button>
-    </div>
-
-    <!-- Active Scale Indicator -->
-    <div class="alert alert-info mb-4" id="activeScaleAlert">
-        <div class="d-flex align-items-center justify-content-between flex-wrap">
-            <div>
-                <i class="fas fa-info-circle"></i>
-                <strong>Currently Operational Scale:</strong>
-                <span id="activeScaleName" class="fw-bold">{{ active_scale_name or 'None selected' }}</span>
-                <span class="badge bg-success ms-2" id="activeScaleBadge">
-                    <i class="fas fa-check-circle"></i> ACTIVE
-                </span>
-            </div>
-            <div>
-                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#selectScaleModal">
-                    <i class="fas fa-exchange-alt"></i> Switch Active Scale
-                </button>
-                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="refreshAllScales()">
-                    <i class="fas fa-sync-alt"></i> Refresh Status
-                </button>
-            </div>
-        </div>
+        {% endif %}
     </div>
 
     <!-- Scales Grid -->
-    <div class="row" id="scalesGrid">
-        {% for scale_id, scale in scales.items() %}
-        <div class="col-md-6 col-lg-3 mb-4" id="scale-card-{{ scale_id }}">
-            <div class="card h-100 {% if scale.is_active %}border-primary border-3 shadow-lg{% endif %}">
-                <div class="card-header {% if scale.is_active %}bg-primary text-white{% else %}bg-light{% endif %}">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas {% if scale.icon %}{{ scale.icon }}{% else %}fa-balance-scale{% endif %} me-2"></i>
-                            <strong>{{ scale.name }}</strong>
-                        </div>
-                        <div>
+    <div class="row">
+        {% if scales %}
+            {% for scale in scales %}
+            <div class="col-md-6 col-lg-3 mb-4">
+                <div class="card h-100">
+                    <div class="card-header {% if scale.is_active %}bg-primary text-white{% else %}bg-light{% endif %}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="fas fa-balance-scale me-2"></i>
+                                <strong>{{ scale.name }}</strong>
+                            </div>
                             {% if scale.is_active %}
-                            <span class="badge bg-success">
-                                <i class="fas fa-check-circle"></i> OPERATIONAL
-                            </span>
-                            {% else %}
-                            <span class="badge bg-secondary">
-                                <i class="fas fa-ban"></i> NON-OPERATIONAL
-                            </span>
+                            <span class="badge bg-success">ACTIVE</span>
                             {% endif %}
                         </div>
                     </div>
-                </div>
-                <div class="card-body">
-                    <!-- Live Weight Display -->
-                    <div class="text-center mb-3">
-                        <div class="display-4" id="weight-{{ scale_id }}" style="font-size: 2.5rem;">---</div>
-                        <small class="text-muted">{{ scale.location }}</small>
-                        <div id="weight-status-{{ scale_id }}" class="small mt-1"></div>
-                    </div>
-                    
-                    <!-- Scale Details -->
-                    <div class="small">
-                        <div class="row mb-2">
-                            <div class="col-6 text-muted">Capacity:</div>
-                            <div class="col-6 text-end">{{ scale.capacity_kg }} kg</div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <h3 id="weight-{{ scale.scale_id }}">--- kg</h3>
+                            <small class="text-muted">{{ scale.location }}</small>
                         </div>
-                        <div class="row mb-2">
-                            <div class="col-6 text-muted">Connection:</div>
-                            <div class="col-6 text-end" id="connection-{{ scale_id }}">
-                                {% if scale.is_active %}
-                                <span class="text-success">Active</span>
-                                {% else %}
-                                <span class="text-secondary">Inactive</span>
-                                {% endif %}
+                        <div class="small">
+                            <div class="row mb-2">
+                                <div class="col-6 text-muted">Capacity:</div>
+                                <div class="col-6 text-end">{{ scale.capacity_kg }} kg</div>
+                            </div>
+                            <div class="row mb-2">
+                                <div class="col-6 text-muted">Status:</div>
+                                <div class="col-6 text-end">
+                                    {% if scale.is_operational %}
+                                        <span class="text-success">Operational</span>
+                                    {% else %}
+                                        <span class="text-danger">Offline</span>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
-                        <div class="row mb-2">
-                            <div class="col-6 text-muted">Today's Weighs:</div>
-                            <div class="col-6 text-end" id="weighs-{{ scale_id }}">{{ scale.today_weighs or 0 }}</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Action Buttons -->
-                    <div class="mt-3">
-                        {% if scale.is_active %}
-                        <button class="btn btn-sm btn-outline-warning w-100 deactivate-scale-btn" data-scale-id="{{ scale_id }}" data-scale-name="{{ scale.name }}">
-                            <i class="fas fa-ban"></i> Deactivate Scale
-                        </button>
-                        {% else %}
-                        <button class="btn btn-sm btn-outline-success w-100 activate-scale-btn" data-scale-id="{{ scale_id }}" data-scale-name="{{ scale.name }}">
-                            <i class="fas fa-play-circle"></i> Activate Scale
-                        </button>
+                        {% if session.is_admin %}
+                            {% if scale.is_operational and not scale.is_active %}
+                            <button class="btn btn-sm btn-outline-primary w-100 mt-2 set-active-btn" 
+                                    data-scale-id="{{ scale.scale_id }}" data-scale-name="{{ scale.name }}">
+                                <i class="fas fa-play-circle"></i> Set as Active
+                            </button>
+                            {% endif %}
                         {% endif %}
-                        <button class="btn btn-sm btn-outline-info w-100 mt-2 test-scale-btn" data-scale-id="{{ scale_id }}" data-scale-name="{{ scale.name }}">
-                            <i class="fas fa-microphone-alt"></i> Test Connection
-                        </button>
                     </div>
                 </div>
             </div>
-        </div>
-        {% endfor %}
-    </div>
-
-    <!-- Connection Status Legend -->
-    <div class="card mt-3">
-        <div class="card-body">
-            <h6><i class="fas fa-info-circle"></i> Scale Status Legend</h6>
-            <div class="row text-center">
-                <div class="col-md-4">
-                    <span class="badge bg-success"><i class="fas fa-check-circle"></i> Operational</span>
-                    <small class="text-muted d-block">Scale is active and can be used for transactions</small>
-                </div>
-                <div class="col-md-4">
-                    <span class="badge bg-secondary"><i class="fas fa-ban"></i> Non-operational</span>
-                    <small class="text-muted d-block">Scale is inactive, cannot be used for transactions</small>
-                </div>
-                <div class="col-md-4">
-                    <span class="badge bg-primary"><i class="fas fa-star"></i> Active</span>
-                    <small class="text-muted d-block">Currently in use for transactions</small>
-                </div>
+            {% endfor %}
+        {% else %}
+            <div class="col-12">
+                <div class="alert alert-warning">No scales configured. Please contact administrator.</div>
             </div>
-        </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- Switch Active Scale Modal -->
+<!-- Select Active Scale Modal -->
 <div class="modal fade" id="selectScaleModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="fas fa-exchange-alt"></i> Switch Operational Scale</h5>
+                <h5 class="modal-title"><i class="fas fa-exchange-alt"></i> Select Active Scale</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Select which scale should be used for transactions:</p>
-                <div id="scaleSelectionList">
-                    {% for scale_id, scale in scales.items() %}
-                    <div class="form-check mb-2">
-                        <input class="form-check-input scale-radio" type="radio" name="activeScale" id="scale_{{ scale_id }}" value="{{ scale_id }}" {% if scale.is_active %}checked{% endif %} {% if not scale.is_operational %}disabled{% endif %}>
-                        <label class="form-check-label" for="scale_{{ scale_id }}">
-                            <strong>{{ scale.name }}</strong> - {{ scale.location }}
-                            {% if scale.is_active %}
-                            <span class="badge bg-success ms-1">Currently Active</span>
-                            {% endif %}
-                            {% if not scale.is_operational %}
-                            <span class="badge bg-secondary ms-1">Non-operational</span>
-                            {% endif %}
-                        </label>
-                    </div>
-                    {% endfor %}
+                <p>Choose which scale to use for transactions:</p>
+                {% for scale in scales %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input scale-radio" type="radio" name="activeScale" 
+                           id="scale_{{ scale.scale_id }}" value="{{ scale.scale_id }}" 
+                           {% if scale.is_active %}checked{% endif %}>
+                    <label class="form-check-label" for="scale_{{ scale.scale_id }}">
+                        <strong>{{ scale.name }}</strong> - {{ scale.location }} ({{ scale.capacity_kg }}kg)
+                    </label>
                 </div>
+                {% endfor %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="saveActiveScaleBtn" class="btn btn-primary">Switch to Selected Scale</button>
+                <button type="button" id="saveActiveScaleBtn" class="btn btn-primary">Save Selection</button>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Add New Scale Modal -->
-<div class="modal fade" id="addScaleModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="fas fa-plus"></i> Add New Scale</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="addScaleForm">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Scale Name *</label>
-                        <input type="text" id="scale_name" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Location *</label>
-                        <input type="text" id="scale_location" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Capacity (kg) *</label>
-                        <input type="number" id="scale_capacity" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">COM Port</label>
-                        <input type="text" id="scale_port" class="form-control" placeholder="e.g., COM3">
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input type="checkbox" id="scale_active" class="form-check-input" checked>
-                            <label class="form-check-label">Set as operational immediately</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Scale</button>
-                </div>
-            </form>
         </div>
     </div>
 </div>
 
 <script>
-    let refreshInterval;
+    // Set active scale button handlers
+    document.querySelectorAll('.set-active-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const scaleId = this.dataset.scaleId;
+            await setActiveScale(scaleId);
+        });
+    });
     
-    document.addEventListener('DOMContentLoaded', function() {
-        refreshAllScales();
-        startAutoRefresh();
-    });
-
-    function startAutoRefresh() {
-        if (refreshInterval) clearInterval(refreshInterval);
-        refreshInterval = setInterval(refreshAllScales, 5000);
-    }
-
-    async function refreshAllScales() {
-        try {
-            const response = await fetch('/api/get_all_weights');
-            const data = await response.json();
-            if (data.success) {
-                for (const [scaleId, scaleData] of Object.entries(data.scales)) {
-                    const weightEl = document.getElementById(`weight-${scaleId}`);
-                    if (weightEl && scaleData.weight) {
-                        weightEl.innerHTML = scaleData.weight.toFixed(1) + '<small style="font-size: 1rem;"> kg</small>';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Refresh error:', error);
-        }
-    }
-
-    // Activate scale
-    document.querySelectorAll('.activate-scale-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const scaleId = btn.dataset.scaleId;
-            const scaleName = btn.dataset.scaleName;
-            if (confirm(`Activate ${scaleName}? This will make it operational.`)) {
-                await updateScaleStatus(scaleId, true);
-            }
-        });
-    });
-
-    // Deactivate scale
-    document.querySelectorAll('.deactivate-scale-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const scaleId = btn.dataset.scaleId;
-            const scaleName = btn.dataset.scaleName;
-            if (confirm(`Deactivate ${scaleName}? This will make it non-operational.`)) {
-                await updateScaleStatus(scaleId, false);
-            }
-        });
-    });
-
-    async function updateScaleStatus(scaleId, isOperational) {
-        try {
-            const response = await fetch('/api/update_scale_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scale_id: scaleId, is_operational: isOperational })
-            });
-            const data = await response.json();
-            if (data.success) {
-                showToast(`Scale status updated successfully`, 'success');
-                location.reload();
-            } else {
-                showToast('Error: ' + data.error, 'danger');
-            }
-        } catch (error) {
-            showToast('Failed to update scale status', 'danger');
-        }
-    }
-
-    async function setActiveScale(scaleId, scaleName) {
+    async function setActiveScale(scaleId) {
         try {
             const response = await fetch('/api/set_active_scale', {
                 method: 'POST',
@@ -285,103 +116,36 @@
             });
             const data = await response.json();
             if (data.success) {
-                showToast(`✓ ${scaleName} is now the active operational scale`, 'success');
+                alert('✓ Active scale updated successfully');
                 location.reload();
             } else {
-                showToast('Error: ' + data.error, 'danger');
+                alert('Error: ' + (data.error || 'Unknown error'));
             }
         } catch (error) {
-            showToast('Failed to set active scale', 'danger');
+            console.error('Error:', error);
+            alert('Failed to set active scale');
         }
     }
-
-    async function testScaleConnection(scaleId, scaleName) {
-        showToast(`Testing connection to ${scaleName}...`, 'info');
+    
+    // Refresh weights every 5 seconds
+    async function refreshWeights() {
         try {
-            const response = await fetch(`/api/test_scale_connection?scale_id=${scaleId}&mock=true`);
+            const response = await fetch('/api/get_all_weights');
             const data = await response.json();
-            if (data.success && data.connected) {
-                showToast(`✓ ${scaleName} is connected! Weight: ${data.weight} kg`, 'success');
-            } else {
-                showToast(`✗ ${scaleName} is offline. Please check connection.`, 'danger');
+            if (data.success && data.scales) {
+                for (const [scaleId, scaleData] of Object.entries(data.scales)) {
+                    const weightEl = document.getElementById(`weight-${scaleId}`);
+                    if (weightEl && scaleData.weight) {
+                        weightEl.textContent = scaleData.weight.toFixed(1) + ' kg';
+                    }
+                }
             }
         } catch (error) {
-            showToast(`✗ ${scaleName} connection error: ${error.message}`, 'danger');
+            console.error('Refresh error:', error);
         }
     }
-
-    function showToast(message, type) {
-        let toastContainer = document.getElementById('toastContainer');
-        if (!toastContainer) {
-            toastContainer = document.createElement('div');
-            toastContainer.id = 'toastContainer';
-            toastContainer.className = 'position-fixed bottom-0 end-0 p-3';
-            toastContainer.style.zIndex = '1100';
-            document.body.appendChild(toastContainer);
-        }
-        
-        const bgClass = type === 'success' ? 'bg-success' : (type === 'danger' ? 'bg-danger' : 'bg-info');
-        const toastId = 'toast-' + Date.now();
-        
-        toastContainer.innerHTML += `
-            <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0 mb-2" role="alert">
-                <div class="d-flex">
-                    <div class="toast-body">${message}</div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-                </div>
-            </div>
-        `;
-        
-        const toastElement = document.getElementById(toastId);
-        const toast = new bootstrap.Toast(toastElement, { delay: 3000 });
-        toast.show();
-        toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove());
-    }
-
-    // Test connection button handlers
-    document.querySelectorAll('.test-scale-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const scaleId = btn.dataset.scaleId;
-            const scaleName = btn.dataset.scaleName;
-            await testScaleConnection(scaleId, scaleName);
-        });
-    });
-
-    // Save active scale from modal
-    document.getElementById('saveActiveScaleBtn').addEventListener('click', async () => {
-        const selected = document.querySelector('input[name="activeScale"]:checked');
-        if (selected) {
-            const scaleId = selected.value;
-            const scaleName = selected.closest('.form-check')?.querySelector('label')?.innerText.split(' - ')[0] || scaleId;
-            await setActiveScale(scaleId, scaleName);
-            bootstrap.Modal.getInstance(document.getElementById('selectScaleModal')).hide();
-        }
-    });
-
-    // Add new scale
-    document.getElementById('addScaleForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const data = {
-            name: document.getElementById('scale_name').value,
-            location: document.getElementById('scale_location').value,
-            capacity_kg: parseInt(document.getElementById('scale_capacity').value),
-            port: document.getElementById('scale_port').value,
-            is_operational: document.getElementById('scale_active').checked
-        };
-        
-        const response = await fetch('/api/scales', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        
-        if (response.ok) {
-            showToast('Scale added successfully', 'success');
-            location.reload();
-        } else {
-            const error = await response.json();
-            showToast('Error: ' + error.error, 'danger');
-        }
-    });
+    
+    refreshWeights();
+    setInterval(refreshWeights, 5000);
 </script>
 {% endblock %}
