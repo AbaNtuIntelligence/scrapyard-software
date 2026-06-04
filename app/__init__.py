@@ -11,6 +11,11 @@ app = Flask(__name__)
 app.secret_key = 'scrapyard-secret-key-2026'
 
 
+
+@app.route('/api/get_all_weights')
+def api_get_all_weights():
+    return jsonify({'success': True, 'scales': {}})
+
 @app.route('/force-add-materials')
 def force_add_materials():
     conn = get_db()
