@@ -63,6 +63,8 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
 
+
+
     # Materials table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
@@ -257,6 +259,50 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+
+@app.route('/admin/add-scales')
+def admin_add_scales():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Create table if not exists
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scale_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scale_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            location TEXT,
+            capacity_kg INTEGER,
+            is_operational BOOLEAN DEFAULT 1,
+            is_active BOOLEAN DEFAULT 0,
+            display_order INTEGER DEFAULT 0
+        )
+    ''')
+    
+    # Insert default scales
+    scales = [
+        ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1, 1, 1),
+        ('scale_2', 'Secondary Scale', 'South Gate', 3000, 1, 0, 2),
+        ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 1, 0, 3),
+        ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 1, 0, 4),
+    ]
+    
+    for s in scales:
+        cursor.execute('''
+            INSERT OR REPLACE INTO scale_config (scale_id, name, location, capacity_kg, is_operational, is_active, display_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', s)
+    
+    conn.commit()
+    
+    cursor.execute('SELECT COUNT(*) FROM scale_config')
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    return f'<h2>✅ Added {count} scales to database!</h2><p>Scales added: Main Gate, Secondary, Processing, Weighbridge</p><a href="/scales">Go to Scales Page</a>'
+
+
+
 # ============ MAIN ROUTES ============
 @app.route('/')
 def index():
@@ -328,7 +374,70 @@ def materials():
 @app.route('/scales')
 @login_required
 def scales_dashboard():
-    return render_template('scales_dashboard.html', active_page='scales')
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get all scales from database
+        cursor.execute('SELECT * FROM scale_config ORDER BY display_order')
+        db_scales = cursor.fetchall()
+        
+        # If no scales in database, create defaults
+        if len(db_scales) == 0:
+            default_scales = [
+                ('scale_1', 'Main Gate Scale', 'Main Entrance', 5000, 1, 1),
+                ('scale_2', 'Secondary Scale', 'South Gate', 3000, 1, 0),
+                ('scale_3', 'Processing Scale', 'Sorting Area', 1000, 1, 0),
+                ('scale_4', 'Weighbridge Scale', 'Weighbridge', 20000, 1, 0),
+            ]
+            for s in default_scales:
+                cursor.execute('''
+                    INSERT INTO scale_config (scale_id, name, location, capacity_kg, is_operational, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', s)
+            conn.commit()
+            
+            # Fetch again
+            cursor.execute('SELECT * FROM scale_config ORDER BY display_order')
+            db_scales = cursor.fetchall()
+        
+        scales = {}
+        for scale in db_scales:
+            scales[scale['scale_id']] = {
+                'name': scale['name'],
+                'location': scale['location'],
+                'capacity_kg': scale['capacity_kg'],
+                'is_operational': scale.get('is_operational', 1),
+                'is_active': scale.get('is_active', 0),
+                'icon': 'fa-balance-scale'
+            }
+        
+        # Get active scale
+        active_scale = None
+        active_scale_name = 'None'
+        for scale_id, scale in scales.items():
+            if scale.get('is_active'):
+                active_scale = scale_id
+                active_scale_name = scale['name']
+                break
+        
+        conn.close()
+        
+        return render_template('scales_dashboard.html', 
+                             scales=scales,
+                             active_scale=active_scale,
+                             active_scale_name=active_scale_name,
+                             active_page='scales')
+                             
+    except Exception as e:
+        print(f"Scales error: {e}")
+        import traceback
+        traceback.print_exc()
+        return render_template('scales_dashboard.html', 
+                             scales={},
+                             active_scale=None,
+                             active_scale_name='None',
+                             active_page='scales')
 
 @app.route('/reports')
 @login_required
@@ -338,7 +447,38 @@ def reports():
 @app.route('/sellers')
 @login_required
 def sellers():
-    return render_template('sellers.html', active_page='sellers')
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get all sellers with their transaction totals
+        cursor.execute('''
+            SELECT 
+                s.id,
+                s.full_name,
+                s.id_number,
+                s.phone,
+                s.created_at,
+                COUNT(t.id) as transaction_count,
+                COALESCE(SUM(t.weight_kg), 0) as total_weight,
+                COALESCE(SUM(t.amount), 0) as total_earned
+            FROM sellers s
+            LEFT JOIN transactions t ON s.id = t.seller_id
+            GROUP BY s.id, s.full_name, s.id_number, s.phone, s.created_at
+            ORDER BY s.full_name
+        ''')
+        
+        sellers = cursor.fetchall()
+        conn.close()
+        
+        return render_template('sellers.html', sellers=sellers, active_page='sellers')
+        
+    except Exception as e:
+        print(f"Sellers error: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f'Error loading sellers: {str(e)}', 'danger')
+        return render_template('sellers.html', sellers=[], active_page='sellers')
 
 @app.route('/new_transaction', methods=['GET', 'POST'])
 @login_required
@@ -347,54 +487,62 @@ def new_transaction():
     cursor = conn.cursor()
     
     if request.method == 'POST':
-        # Handle transaction save
-        seller_name = request.form['seller_name']
-        id_number = request.form['id_number']
-        phone = request.form.get('phone', '')
-        material_id = request.form['material_id']
-        scale_id = request.form.get('scale_id', 'scale_1')
-        direction = request.form.get('direction', 'inbound')
-        weight = float(request.form['weight'])
-        
-        # Get material price
-        if direction == 'inbound':
-            cursor.execute('SELECT code, inbound_price as price FROM materials WHERE id = ?', (material_id,))
-        else:
-            cursor.execute('SELECT code, outbound_price as price FROM materials WHERE id = ?', (material_id,))
-        
-        material = cursor.fetchone()
-        amount = weight * material['price']
-        
-        # Create or get seller
-        cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
-        seller = cursor.fetchone()
-        
-        if seller:
-            seller_id = seller['id']
-        else:
-            cursor.execute('INSERT INTO sellers (full_name, id_number, phone) VALUES (?, ?, ?)',
-                         (seller_name, id_number, phone))
-            seller_id = cursor.lastrowid
-        
-        # Create transaction
-        ticket_number = f"{direction[:3].upper()}{uuid.uuid4().hex[:5].upper()}"
-        cursor.execute('''
-            INSERT INTO transactions (ticket_number, seller_id, material_id, material_code, weight_kg, amount, scale_id, direction)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (ticket_number, seller_id, material_id, material['code'], weight, amount, scale_id, direction))
-        
-        conn.commit()
-        conn.close()
-        
-        flash(f'✓ Transaction saved! Ticket: {ticket_number}', 'success')
-        return redirect(url_for('dashboard'))
+        try:
+            seller_name = request.form['seller_name']
+            id_number = request.form['id_number']
+            phone = request.form.get('phone', '')
+            material_id = request.form['material_id']
+            scale_id = request.form.get('scale_id', 'scale_1')
+            direction = request.form.get('direction', 'inbound')
+            weight = float(request.form['weight'])
+            
+            # Get material price based on direction
+            if direction == 'inbound':
+                cursor.execute('SELECT code, inbound_price as price FROM materials WHERE id = ?', (material_id,))
+            else:
+                cursor.execute('SELECT code, outbound_price as price FROM materials WHERE id = ?', (material_id,))
+            
+            material = cursor.fetchone()
+            if not material:
+                flash('Material not found', 'danger')
+                return redirect(url_for('new_transaction'))
+            
+            amount = weight * material['price']
+            
+            # Create or get seller
+            cursor.execute('SELECT id FROM sellers WHERE id_number = ?', (id_number,))
+            seller = cursor.fetchone()
+            
+            if seller:
+                seller_id = seller['id']
+            else:
+                cursor.execute('INSERT INTO sellers (full_name, id_number, phone) VALUES (?, ?, ?)',
+                             (seller_name, id_number, phone))
+                seller_id = cursor.lastrowid
+            
+            # Create transaction
+            ticket_number = f"{direction[:3].upper()}{uuid.uuid4().hex[:5].upper()}"
+            cursor.execute('''
+                INSERT INTO transactions (ticket_number, seller_id, material_id, material_code, weight_kg, amount, scale_id, direction)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (ticket_number, seller_id, material_id, material['code'], weight, amount, scale_id, direction))
+            
+            conn.commit()
+            conn.close()
+            
+            flash(f'✓ Transaction saved! Ticket: {ticket_number}', 'success')
+            return redirect(url_for('dashboard'))
+            
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            flash(f'Error saving transaction: {str(e)}', 'danger')
+            return redirect(url_for('new_transaction'))
     
-    # GET request - show form with all materials
+    # GET request - show form
     cursor.execute('SELECT * FROM materials WHERE is_active = 1 ORDER BY code')
     materials = cursor.fetchall()
     conn.close()
-    
-    print(f"DEBUG: Found {len(materials)} materials for dropdown")  # Debug line
     
     return render_template('new_transaction.html', materials=materials, active_page='new_transaction')
 
@@ -430,6 +578,141 @@ def api_create_material():
         return jsonify({'error': 'Material code or name already exists'}), 400
     finally:
         conn.close()
+
+@app.route('/api/reports/generate', methods=['GET'])
+@login_required
+def api_generate_report():
+    try:
+        report_type = request.args.get('report_type', 'inbound')
+        date_range = request.args.get('date_range', 'month')
+        start_date_str = request.args.get('start_date', '')
+        end_date_str = request.args.get('end_date', '')
+        
+        # Calculate date range
+        end_date = datetime.now()
+        if date_range == 'today':
+            start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif date_range == 'week':
+            start_date = end_date - timedelta(days=end_date.weekday())
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif date_range == 'month':
+            start_date = end_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        elif date_range == 'custom' and start_date_str and end_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+        else:
+            start_date = end_date - timedelta(days=30)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if report_type == 'inbound' or report_type == 'outbound':
+            # Material report
+            cursor.execute('''
+                SELECT 
+                    m.code, 
+                    m.name, 
+                    COALESCE(SUM(t.weight_kg), 0) as total_weight,
+                    COALESCE(SUM(t.amount), 0) as total_amount,
+                    COUNT(t.id) as transaction_count,
+                    CASE 
+                        WHEN SUM(t.weight_kg) > 0 
+                        THEN ROUND(SUM(t.amount) / SUM(t.weight_kg), 2)
+                        ELSE 0 
+                    END as avg_price
+                FROM materials m
+                LEFT JOIN transactions t ON m.id = t.material_id 
+                    AND t.direction = ?
+                    AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+                WHERE m.is_active = 1
+                GROUP BY m.id, m.code, m.name
+                HAVING total_weight > 0 OR total_amount > 0
+                ORDER BY total_weight DESC
+            ''', (report_type, start_date, end_date))
+            
+            items = []
+            for row in cursor.fetchall():
+                items.append({
+                    'code': row['code'],
+                    'name': row['name'],
+                    'total_weight': float(row['total_weight']),
+                    'total_amount': float(row['total_amount']),
+                    'transaction_count': row['transaction_count'],
+                    'avg_price': float(row['avg_price'])
+                })
+            
+            total_weight = sum(i['total_weight'] for i in items)
+            total_amount = sum(i['total_amount'] for i in items)
+            
+            result = {
+                'success': True,
+                'report_type': report_type,
+                'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+                'items': items,
+                'total_weight': total_weight,
+                'total_amount': total_amount,
+                'transaction_count': sum(i['transaction_count'] for i in items),
+                'avg_price': total_amount / total_weight if total_weight > 0 else 0
+            }
+            
+        elif report_type == 'seller':
+            # Seller performance report
+            cursor.execute('''
+                SELECT 
+                    s.full_name,
+                    s.id_number,
+                    s.phone,
+                    COALESCE(SUM(t.weight_kg), 0) as total_weight,
+                    COALESCE(SUM(t.amount), 0) as total_amount,
+                    COUNT(t.id) as transaction_count,
+                    MIN(t.timestamp) as first_transaction,
+                    MAX(t.timestamp) as last_transaction
+                FROM sellers s
+                LEFT JOIN transactions t ON s.id = t.seller_id
+                    AND DATE(t.timestamp) BETWEEN DATE(?) AND DATE(?)
+                GROUP BY s.id, s.full_name, s.id_number, s.phone
+                HAVING total_weight > 0 OR total_amount > 0
+                ORDER BY total_amount DESC
+            ''', (start_date, end_date))
+            
+            items = []
+            for row in cursor.fetchall():
+                items.append({
+                    'full_name': row['full_name'],
+                    'id_number': row['id_number'],
+                    'phone': row['phone'] or '-',
+                    'total_weight': float(row['total_weight']),
+                    'total_amount': float(row['total_amount']),
+                    'transaction_count': row['transaction_count'],
+                    'first_transaction': row['first_transaction'][:10] if row['first_transaction'] else '-',
+                    'last_transaction': row['last_transaction'][:10] if row['last_transaction'] else '-'
+                })
+            
+            total_weight = sum(i['total_weight'] for i in items)
+            total_amount = sum(i['total_amount'] for i in items)
+            
+            result = {
+                'success': True,
+                'report_type': 'seller',
+                'period': f'{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}',
+                'items': items,
+                'total_weight': total_weight,
+                'total_amount': total_amount,
+                'transaction_count': sum(i['transaction_count'] for i in items),
+                'avg_price': total_amount / total_weight if total_weight > 0 else 0
+            }
+        else:
+            result = {'success': False, 'error': 'Invalid report type'}
+        
+        conn.close()
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Report error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============ RUN ============
 if __name__ == '__main__':
